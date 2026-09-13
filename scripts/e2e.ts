@@ -25,19 +25,21 @@ const project = process.env.E2E_PROJECT
   ? await pipeline.project(process.env.E2E_PROJECT)
   : await pipeline.createProject({ source: process.argv[2] ?? (await createSample(exec)), model: info.defaultModel })
 log(`project ${project.id} workspace=${project.workspace} ports=${JSON.stringify(project.ports)}`)
-const initial = await pipeline.snapshot(project.id)
-const produced = (phase: PhaseName, batch?: string) =>
-  ({
-    discover: initial.discovery,
-    entrypoints: initial.entrypoints,
-    environment: initial.environment,
-    rules: batch && initial.rules[batch],
-    tests: batch && initial.tests[batch],
-    legacy: batch && initial.legacyRuns[batch],
-    port: batch && initial.ports[batch],
-    parity: batch && initial.parity[batch],
-    reconcile: batch && initial.reconcile[batch],
-  })[phase] !== undefined
+const produced = async (phase: PhaseName, batch?: string) => {
+  const s = await pipeline.snapshot(project.id)
+  const outputs = {
+    discover: s.discovery,
+    entrypoints: s.entrypoints,
+    environment: s.environment,
+    rules: batch ? s.rules[batch] : undefined,
+    tests: batch ? s.tests[batch] : undefined,
+    legacy: batch ? s.legacyRuns[batch] : undefined,
+    port: batch ? s.ports[batch] : undefined,
+    parity: batch ? s.parity[batch] : undefined,
+    reconcile: batch ? s.reconcile[batch] : undefined,
+  }
+  return outputs[phase] !== undefined
+}
 
 bus.subscribe(project.id, (event) => {
   if (event.type === "activity" && event.activity.status !== "running") {
@@ -53,7 +55,7 @@ bus.subscribe(project.id, (event) => {
 const until = process.env.E2E_UNTIL as PhaseName | undefined
 
 async function run(phase: PhaseName, batch?: string) {
-  if (produced(phase, batch)) {
+  if (await produced(phase, batch)) {
     log(`↷ ${phaseKey(phase, batch)} already done, skipping`)
     return true
   }
@@ -88,7 +90,7 @@ log(`batches: ${batches.map((b) => `${b.id}(${b.entrypoints.length})`).join(", "
 const batch = batches.find((b) => b.id === process.env.E2E_BATCH) ?? batches[0]
 if (!batch) finish(1)
 
-for (const phase of ["rules", "tests", "port"] as const) {
+for (const phase of ["rules", "tests", "legacy", "port"] as const) {
   if (!(await run(phase, batch.id))) finish(1)
   if (until === phase) finish(0)
 }

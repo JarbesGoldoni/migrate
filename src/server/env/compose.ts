@@ -46,14 +46,17 @@ export function compose(exec: Exec, command: string[], file: string, project: st
   }
 }
 
-/** Wait until something answers HTTP on the base URL — any status counts as alive. */
+/**
+ * Wait until the service answers without a server error. Right after a reset
+ * the app is often up before its database, and answers 5xx until it is ready.
+ */
 export async function waitForHttp(baseUrl: string, path = "/", timeoutMs = 120_000, fetchImpl = fetch) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const alive = await fetchImpl(new URL(path || "/", baseUrl), { signal: AbortSignal.timeout(3_000) })
-      .then(() => true)
-      .catch(() => false)
-    if (alive) return true
+    const status = await fetchImpl(new URL(path || "/", baseUrl), { signal: AbortSignal.timeout(3_000) })
+      .then((r) => r.status)
+      .catch(() => 0)
+    if (status > 0 && status < 500) return true
     await new Promise((r) => setTimeout(r, 1_000))
   }
   return false

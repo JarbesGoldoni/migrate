@@ -87,12 +87,19 @@ describe("compose", () => {
     expect(calls).toEqual(["docker compose -f f -p p build"])
   })
 
-  test("waits for any HTTP answer", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("nope", { status: 500 }) })
-    afterAll(() => server.stop(true))
-    expect(await waitForHttp(`http://127.0.0.1:${server.port}`, "/health", 2_000)).toBe(true)
+  test("waits until the service answers without a server error", async () => {
+    let calls = 0
+    const starting = Bun.serve({ port: 0, fetch: () => new Response("x", { status: ++calls < 2 ? 503 : 404 }) })
+    const broken = Bun.serve({ port: 0, fetch: () => new Response("x", { status: 500 }) })
+    afterAll(() => {
+      starting.stop(true)
+      broken.stop(true)
+    })
+    expect(await waitForHttp(`http://127.0.0.1:${starting.port}`, "/health", 4_000)).toBe(true)
+    expect(calls).toBe(2)
+    expect(await waitForHttp(`http://127.0.0.1:${broken.port}`, "/", 1_200)).toBe(false)
     expect(await waitForHttp("http://127.0.0.1:1", "", 1_200)).toBe(false)
-  })
+  }, 15_000)
 })
 
 describe("preflight", () => {
