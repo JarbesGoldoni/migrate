@@ -366,7 +366,9 @@ export class Pipeline {
         await this.setRuntime(project, { v2: "starting" })
         const up = await composer.up(["v2"], { onOutput: this.streamOutput(project, key, "compose-v2") })
         steps.push({ name: "container build", ok: up.ok, output: tail(up.output) })
-        const alive = up.ok && (await waitForHttp(`http://127.0.0.1:${project.ports.v2}`, "/", this.deps.bootTimeoutMs ?? 180_000))
+        // v2 reproduces the legacy routes, so the legacy health path also tells when its dependencies are ready.
+        const health = (await this.snapshot(project.id)).discovery?.run.healthPath || "/"
+        const alive = up.ok && (await waitForHttp(`http://127.0.0.1:${project.ports.v2}`, health, this.deps.bootTimeoutMs ?? 180_000))
         steps.push({ name: "v2 answers HTTP", ok: alive, output: alive ? "" : tail(await composer.logs("v2").catch(() => "")) })
         await this.setRuntime(project, { v2: alive ? "up" : "failed" })
       })
@@ -401,7 +403,7 @@ export class Pipeline {
       }
       const [legacyAlive, v2Alive] = await Promise.all([
         waitForHttp(legacyUrl, snapshot.discovery?.run.healthPath || "/", this.deps.bootTimeoutMs ?? 180_000),
-        waitForHttp(v2Url, "/", this.deps.bootTimeoutMs ?? 180_000),
+        waitForHttp(v2Url, snapshot.discovery?.run.healthPath || "/", this.deps.bootTimeoutMs ?? 180_000),
       ])
       await this.setRuntime(project, { legacy: legacyAlive ? "up" : "failed", v2: v2Alive ? "up" : "failed" })
       const results = []
@@ -466,7 +468,9 @@ export class Pipeline {
     const timeout = this.deps.bootTimeoutMs ?? 180_000
     const [legacy, v2] = await Promise.all([
       waitForHttp(`http://127.0.0.1:${project.ports.legacy}`, snapshot.discovery?.run.healthPath || "/", timeout),
-      services.includes("v2") ? waitForHttp(`http://127.0.0.1:${project.ports.v2}`, "/", timeout) : Promise.resolve(false),
+      services.includes("v2")
+        ? waitForHttp(`http://127.0.0.1:${project.ports.v2}`, snapshot.discovery?.run.healthPath || "/", timeout)
+        : Promise.resolve(false),
     ])
     await this.setRuntime(project, {
       legacy: legacy ? "up" : "failed",
