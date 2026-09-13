@@ -4,7 +4,6 @@ import {
   type Edge,
   Handle,
   MarkerType,
-  MiniMap,
   type Node,
   type NodeProps,
   Position,
@@ -162,13 +161,6 @@ export function ArchitectureGraph({ discovery, className }: { discovery: Discove
         >
           <Background color="#1d2436" gap={22} size={1.3} />
           <Controls showInteractive={false} position="bottom-left" />
-          <MiniMap
-            pannable
-            zoomable
-            position="bottom-right"
-            nodeColor={(n) => NODE_KINDS[(n.data as ArchData).node.kind]?.color ?? "#64748b"}
-            maskColor="rgba(5,7,12,0.72)"
-          />
         </ReactFlow>
       )}
       <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap gap-3 rounded-xl bg-ink-950/70 px-3 py-2 text-[10px] text-slate-400 ring-1 ring-white/5 backdrop-blur">

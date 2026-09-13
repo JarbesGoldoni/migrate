@@ -20,9 +20,24 @@ const info = await engine.info()
 log(`engine ready=${info.ready} models=${info.models.length} default=${JSON.stringify(info.defaultModel)} ${info.error ?? ""}`)
 if (!info.ready) process.exit(1)
 
-const source = process.argv[2] ?? (await createSample(exec))
-const project = await pipeline.createProject({ source, model: info.defaultModel })
+// E2E_PROJECT=<id> resumes an existing migration, skipping phases that already produced output.
+const project = process.env.E2E_PROJECT
+  ? await pipeline.project(process.env.E2E_PROJECT)
+  : await pipeline.createProject({ source: process.argv[2] ?? (await createSample(exec)), model: info.defaultModel })
 log(`project ${project.id} workspace=${project.workspace} ports=${JSON.stringify(project.ports)}`)
+const initial = await pipeline.snapshot(project.id)
+const produced = (phase: PhaseName, batch?: string) =>
+  ({
+    discover: initial.discovery,
+    entrypoints: initial.entrypoints,
+    environment: initial.environment,
+    rules: batch && initial.rules[batch],
+    tests: batch && initial.tests[batch],
+    legacy: batch && initial.legacyRuns[batch],
+    port: batch && initial.ports[batch],
+    parity: batch && initial.parity[batch],
+    reconcile: batch && initial.reconcile[batch],
+  })[phase] !== undefined
 
 bus.subscribe(project.id, (event) => {
   if (event.type === "activity" && event.activity.status !== "running") {
@@ -38,6 +53,10 @@ bus.subscribe(project.id, (event) => {
 const until = process.env.E2E_UNTIL as PhaseName | undefined
 
 async function run(phase: PhaseName, batch?: string) {
+  if (produced(phase, batch)) {
+    log(`↷ ${phaseKey(phase, batch)} already done, skipping`)
+    return true
+  }
   const result = await pipeline.start(project.id, phase, batch)
   if (!result.started) {
     log(`✗ ${phase} did not start: ${result.reason}`)

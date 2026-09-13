@@ -69,6 +69,7 @@ Workspace layout:
 Rules of engagement:
 - Be efficient: locate code with glob and grep, read only what you need, do not narrate.
 - Never ask questions. Make reasonable assumptions and record them.
+- Commands that can block (container builds, "compose up", servers, installs) always get a timeout of at most 5 minutes; never start a foreground process that does not exit.
 - Finish by writing the JSON document to "${output}" (relative to the workspace root; absolute path ${root}/${output}) with the write tool. Valid JSON only: no comments, no trailing commas. Then reply with one short sentence.`
 }
 
@@ -176,6 +177,8 @@ Create:
    - every "container" dependency becomes a service prefixed "legacy-" (e.g. legacy-postgres). Seed databases with the schema, migrations and seed data found in the repo (init scripts or a one-shot init service) so realistic requests work. Later an identical "v2-" copy will be added so each side has isolated state.
    - every "mock" dependency becomes a small stub under migration/env/mocks/<id>/ returning plausible canned responses for the calls the code makes, as service "legacy-mock-<id>".
    - point the legacy app at those services through environment variables. Use fully qualified images (docker.io/library/postgres:16-alpine).
+   - relative paths in compose.yml (build contexts, bind mounts) resolve from migration/env/, so the workspace root is "../.." (e.g. ../../legacy/db/schema.sql). Bake seed files into images with a small Dockerfile and COPY instead of bind mounts: rootless podman and SELinux hosts deny bind-mounted files (if you must bind mount, append :Z).
+   - never use depends_on "condition: service_healthy" on a service that could exit — it blocks "up" forever; add a healthcheck and use "condition: service_started" plus retries in the app, or a short wait loop.
 3. A .dockerignore at the workspace root excluding **/node_modules, **/.git and v2/bin.
 
 Then start it once: \`cd ${project.workspace} && ${ctx.composeCommand} -f migration/env/compose.yml -p ${name} up -d --build legacy\` and check that http://127.0.0.1:${project.ports.legacy}${run?.healthPath || "/"} answers. If it does not, read the container logs, fix the files and try again, within reason. Leave the containers running. Record anything that could not be made to work in "limitations".
