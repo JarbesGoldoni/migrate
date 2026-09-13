@@ -434,7 +434,11 @@ const BATCH_ICONS: Record<string, LucideIcon> = {
 
 export function batchIcon(name?: string): LucideIcon {
   if (!name) return Layers
-  const key = name.toLowerCase().trim().replace(/icon$/, "").replace(/([a-z])([A-Z])/g, "$1-$2")
+  const key = name
+    .trim()
+    .replace(/Icon$/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
   return BATCH_ICONS[key] ?? BATCH_ICONS[key.split("-")[0]] ?? Layers
 }
 
