@@ -1,0 +1,61 @@
+{
+  "name": "simplify-migrate",
+  "version": "0.1.0",
+  "description": "Watch AI migrate a legacy system: architecture, entry points, business rules, characterization tests, a Go port and side-by-side parity.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "bin": {
+    "simplify-migrate": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "sample",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "build": "bun run build:web && bun run build:cli",
+    "build:web": "vite build",
+    "build:cli": "bun build src/cli.ts --target=node --outfile=dist/cli.js --banner='#!/usr/bin/env node'",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "opencode-ai": "1.18.30"
+  },
+  "trustedDependencies": [
+    "opencode-ai"
+  ],
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@hono/node-server": "^2.1.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^26.5.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@xyflow/react": "^12.11.6",
+    "clsx": "^2.1.1",
+    "elkjs": "^0.12.0",
+    "hono": "^4.13.7",
+    "lucide-react": "^1.45.0",
+    "motion": "^13.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "simple-icons": "^16.31.0",
+    "sugar-high": "^2.4.1",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "zod": "^4.6.4",
+    "zustand": "^5.0.15"
+  }
+}
