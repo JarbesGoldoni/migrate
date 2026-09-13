@@ -3,7 +3,7 @@ import { chmod, mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { relativePath, toActivity, toolKind } from "../src/server/engine/activity"
 import { bundledBinary, findOnPath, resolveEngineBinary } from "../src/server/engine/binary"
-import { OpencodeEngine } from "../src/server/engine/opencode"
+import { firstDefault, OpencodeEngine, recentModel } from "../src/server/engine/opencode"
 import { parseSse, readSse } from "../src/server/engine/sse"
 import type { Activity } from "../src/shared/types"
 import { tempDir } from "./helpers"
@@ -107,6 +107,32 @@ describe("binary resolution", () => {
     await writeFile(join(home, ".opencode", "bin", "opencode"), "#!/bin/sh\n")
     expect(resolveEngineBinary({ PATH: "", HOME: home }, none)).toBe(join(home, ".opencode", "bin", "opencode"))
     expect(resolveEngineBinary({ PATH: "", HOME: pathDir }, none)).toBeUndefined()
+  })
+})
+
+describe("default model", () => {
+  const models = [
+    { providerID: "a", providerName: "A", modelID: "x", name: "X" },
+    { providerID: "b", providerName: "B", modelID: "y", name: "Y" },
+  ]
+
+  test("prefers the most recent model that is still available", async () => {
+    const state = await tempDir()
+    const file = join(state, "opencode", "model.json")
+    await mkdir(join(state, "opencode"), { recursive: true })
+    await writeFile(file, JSON.stringify({ recent: [{ providerID: "gone", modelID: "z" }, { providerID: "b", modelID: "y" }] }))
+    expect(await recentModel(models, state)).toEqual({ providerID: "b", modelID: "y" })
+    await writeFile(file, JSON.stringify({ recent: [{ providerID: "gone", modelID: "z" }] }))
+    expect(await recentModel(models, state)).toBeUndefined()
+    await writeFile(file, "{broken")
+    expect(await recentModel(models, state)).toBeUndefined()
+    expect(await recentModel(models, join(state, "missing"))).toBeUndefined()
+  })
+
+  test("falls back to provider defaults, then the first model", () => {
+    expect(firstDefault({ providers: [], default: { gone: "z", a: "x" } }, models)).toEqual({ providerID: "a", modelID: "x" })
+    expect(firstDefault({ providers: [], default: {} }, models)).toEqual({ providerID: "a", modelID: "x" })
+    expect(firstDefault({ providers: [], default: {} }, [])).toBeUndefined()
   })
 })
 

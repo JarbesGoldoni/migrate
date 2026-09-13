@@ -241,8 +241,10 @@ function describeError(error: unknown) {
   return e.data?.message ?? e.message ?? e.name ?? "Unknown engine error"
 }
 
-async function recentModel(models: ModelOption[]): Promise<ModelRef | undefined> {
-  const stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state")
+export async function recentModel(
+  models: ModelOption[],
+  stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+): Promise<ModelRef | undefined> {
   const raw = await readFile(join(stateHome, "opencode", "model.json"), "utf8").catch(() => "")
   if (!raw) return undefined
   const parsed = (() => {
@@ -258,7 +260,7 @@ async function recentModel(models: ModelOption[]): Promise<ModelRef | undefined>
   return hit ? { providerID: hit.providerID, modelID: hit.modelID } : undefined
 }
 
-function firstDefault(providers: Providers, models: ModelOption[]): ModelRef | undefined {
+export function firstDefault(providers: Providers, models: ModelOption[]): ModelRef | undefined {
   for (const [providerID, modelID] of Object.entries(providers.default)) {
     if (models.some((m) => m.providerID === providerID && m.modelID === modelID)) return { providerID, modelID }
   }
