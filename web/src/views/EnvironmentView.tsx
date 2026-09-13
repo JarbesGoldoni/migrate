@@ -124,7 +124,7 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
           <section>
             <SectionTitle icon={FileCode2} title="Run it yourself" />
             <CommandBlock
-              command={`cd ${project.workspace} && docker compose -f ${environment.composeFile} -p migrate-${project.id} up -d --build`}
+              command={`cd ${project.workspace} && docker compose -f ${environment.composeFile} -p migrate-${project.id} build && docker compose -f ${environment.composeFile} -p migrate-${project.id} up -d`}
             />
           </section>
         </>

@@ -65,7 +65,9 @@ describe("prompts", () => {
     const prompt = environmentPrompt(ctx)
     expect(prompt).toContain("name: migrate-ab12")
     expect(prompt).toContain("host port 18080")
-    expect(prompt).toContain("podman compose -f migration/env/compose.yml -p migrate-ab12 up -d --build legacy")
+    expect(prompt).toContain(
+      "podman compose -f migration/env/compose.yml -p migrate-ab12 build && podman compose -f migration/env/compose.yml -p migrate-ab12 up -d legacy",
+    )
     expect(prompt).toContain("http://127.0.0.1:18080/health")
     expect(prompt).toContain("- postgres: PostgreSQL (database, strategy container, image docker.io/library/postgres:16)")
     expect(environmentPrompt({ ...ctx, discovery: undefined })).toContain("- none recorded")

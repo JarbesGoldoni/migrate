@@ -71,12 +71,20 @@ describe("compose", () => {
     await c.down()
     expect(await c.logs("legacy", 10)).toBe("done")
     expect(calls).toEqual([
-      "docker compose -f migration/env/compose.yml -p migrate-abc up -d --build legacy",
+      "docker compose -f migration/env/compose.yml -p migrate-abc build",
+      "docker compose -f migration/env/compose.yml -p migrate-abc up -d legacy",
       "docker compose -f migration/env/compose.yml -p migrate-abc up -d v2",
       "docker compose -f migration/env/compose.yml -p migrate-abc down -v",
       "docker compose -f migration/env/compose.yml -p migrate-abc down",
       "docker compose -f migration/env/compose.yml -p migrate-abc logs --tail 10 legacy",
     ])
+  })
+
+  test("does not start containers when the build fails", async () => {
+    const calls: string[] = []
+    const failing = scripted({ "docker compose -f f -p p build": { code: 1, stdout: "", stderr: "no space left" }, docker: ok() }, calls)
+    expect(await compose(failing, ["docker", "compose"], "f", "p", "/ws").up(["legacy"])).toEqual({ ok: false, output: "no space left" })
+    expect(calls).toEqual(["docker compose -f f -p p build"])
   })
 
   test("waits for any HTTP answer", async () => {

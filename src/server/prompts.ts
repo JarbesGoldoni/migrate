@@ -181,7 +181,7 @@ Create:
    - never use depends_on "condition: service_healthy" on a service that could exit — it blocks "up" forever; add a healthcheck and use "condition: service_started" plus retries in the app, or a short wait loop.
 3. A .dockerignore at the workspace root excluding **/node_modules, **/.git and v2/bin.
 
-Then start it once: \`cd ${project.workspace} && ${ctx.composeCommand} -f migration/env/compose.yml -p ${name} up -d --build legacy\` and check that http://127.0.0.1:${project.ports.legacy}${run?.healthPath || "/"} answers. If it does not, read the container logs, fix the files and try again, within reason. Leave the containers running. Record anything that could not be made to work in "limitations".
+Then start it once, building images as a separate step because some compose implementations hang on "up --build": \`cd ${project.workspace} && ${ctx.composeCommand} -f migration/env/compose.yml -p ${name} build && ${ctx.composeCommand} -f migration/env/compose.yml -p ${name} up -d legacy\` and check that http://127.0.0.1:${project.ports.legacy}${run?.healthPath || "/"} answers. If it does not, read the container logs, fix the files and try again, within reason. Leave the containers running. Record anything that could not be made to work in "limitations".
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`
@@ -306,7 +306,7 @@ Architecture:
 ${target.architecture}
 - If v2/ already contains earlier batches, extend it and keep existing routes working.
 
-Environment: in migration/env/compose.yml add a service "v2" (build context ../../v2, publishes host port ${ctx.project.ports.v2} to 8080) plus a "v2-" copy of every "legacy-" dependency and mock service with identical images, configuration and seeds, and point v2 at those copies. Do not change the legacy services.
+Environment: in migration/env/compose.yml add a service "v2" (build context ../../v2, publishes host port ${ctx.project.ports.v2} to 8080) plus a "v2-" copy of every "legacy-" dependency and mock service with identical images, configuration and seeds, and point v2 at those copies. Do not change the legacy services. Do not build or start the containers yourself — the pipeline does that right after you finish.
 
 Verify once from v2/: \`${target.verify}\` and fix what fails.
 

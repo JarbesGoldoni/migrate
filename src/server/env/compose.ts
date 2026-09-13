@@ -27,8 +27,13 @@ export function compose(exec: Exec, command: string[], file: string, project: st
     return exec(cmd, [...base, "-f", file, "-p", project, ...args], { cwd, timeoutMs, onOutput })
   }
   return {
+    // podman-compose can hang forever on "up --build", so images are built as a separate step.
     async up(services = [], options = {}) {
-      const r = await run(["up", "-d", ...(options.build === false ? [] : ["--build"]), ...services], options.onOutput)
+      if (options.build !== false) {
+        const built = await run(["build"], options.onOutput)
+        if (built.code !== 0) return { ok: false, output: output(built) }
+      }
+      const r = await run(["up", "-d", ...services], options.onOutput)
       return { ok: r.code === 0, output: output(r) }
     },
     async down(options = {}) {
