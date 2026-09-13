@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
@@ -5,6 +6,7 @@ import { serve } from "@hono/node-server"
 import pkg from "../package.json" with { type: "json" }
 import { createApp } from "./server/app"
 import { EventBus } from "./server/bus"
+import { resolveEngineBinary } from "./server/engine/binary"
 import { OpencodeEngine } from "./server/engine/opencode"
 import { openBrowser } from "./server/open"
 import { Pipeline } from "./server/pipeline"
@@ -16,7 +18,11 @@ const HELP = `
   simplify-migrate — watch AI migrate a legacy system
 
   Usage
-    simplify-migrate [options]
+    simplify-migrate [options]        start the app and open it in your browser
+    simplify-migrate auth login       connect an AI provider (OpenAI, Copilot, Z.AI, ...)
+    simplify-migrate auth list        show connected providers
+    simplify-migrate auth logout      disconnect a provider
+    simplify-migrate models           list the models you can use
 
   Options
     --port <n>     Port to listen on (default 4800, or the next free one)
@@ -25,6 +31,19 @@ const HELP = `
     -v, --version  Print the version
     -h, --help     Show this help
 `
+
+// Provider setup is delegated to the bundled engine's own interactive commands.
+const subcommand = process.argv[2]
+if (subcommand === "auth" || subcommand === "models") {
+  const binary = resolveEngineBinary()
+  if (!binary) {
+    console.error("The AI engine is not installed. Reinstall simplify-migrate.")
+    process.exit(1)
+  }
+  const child = spawn(binary, process.argv.slice(2), { stdio: "inherit" })
+  child.on("exit", (code) => process.exit(code ?? 0))
+  await new Promise(() => {})
+}
 
 const { values } = parseArgs({
   options: {
