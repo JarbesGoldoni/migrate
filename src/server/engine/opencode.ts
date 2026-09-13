@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import type { EngineInfo, ModelOption, ModelRef } from "../../shared/types"
+import { engineDir } from "../paths"
 import { freePort } from "../util/ports"
 import { toActivity } from "./activity"
 import { resolveEngineBinary } from "./binary"
@@ -26,13 +27,19 @@ export class OpencodeEngine implements Engine {
   private stderr = ""
   private cachedInfo?: { at: number; info: EngineInfo }
 
-  constructor(private readonly options: { binary?: string } = {}) {}
+  // The engine treats its working directory as a project; an empty home keeps
+  // it from scanning a large folder such as the user's home on startup.
+  private readonly home: string
+
+  constructor(private readonly options: { binary?: string; home?: string } = {}) {
+    this.home = options.home ?? engineDir()
+  }
 
   async info(): Promise<EngineInfo> {
     if (this.cachedInfo && Date.now() - this.cachedInfo.at < 60_000) return this.cachedInfo.info
     try {
       await this.start()
-      const providers = await this.call<Providers>("GET", "/config/providers", homedir())
+      const providers = await this.call<Providers>("GET", "/config/providers", this.home)
       const models: ModelOption[] = providers.providers.flatMap((p) =>
         Object.values(p.models).map((m) => ({
           providerID: p.id,
@@ -187,8 +194,9 @@ export class OpencodeEngine implements Engine {
     if (!binary || !existsSync(binary)) throw new Error("The AI engine is not installed")
     const port = await freePort()
     this.stderr = ""
+    await mkdir(this.home, { recursive: true })
     const proc = spawn(binary, ["serve", "--port", String(port), "--hostname", "127.0.0.1"], {
-      cwd: homedir(),
+      cwd: this.home,
       stdio: ["ignore", "ignore", "pipe"],
       env: {
         ...process.env,
@@ -213,7 +221,7 @@ export class OpencodeEngine implements Engine {
     const deadline = Date.now() + 60_000
     while (Date.now() < deadline) {
       if (!this.proc) throw new Error(`The AI engine exited during startup. ${this.stderr.trim()}`)
-      const ok = await fetch(`${base}/global/health`, { headers: this.headers() })
+      const ok = await fetch(`${base}/global/health`, { headers: this.headers(), signal: AbortSignal.timeout(2_000) })
         .then((r) => r.ok)
         .catch(() => false)
       if (ok) {

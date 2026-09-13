@@ -5,3 +5,4 @@ export const migrateHome = () => process.env.MIGRATE_HOME ?? join(homedir(), ".m
 export const workspacesDir = () => join(migrateHome(), "workspaces")
 export const samplesDir = () => join(migrateHome(), "samples")
 export const projectsFile = () => join(migrateHome(), "projects.json")
+export const engineDir = () => join(migrateHome(), "engine")

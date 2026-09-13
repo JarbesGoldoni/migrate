@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@xyflow/react/dist/style.css";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-ink-950: #05070c;
+  --color-ink-900: #080b13;
+  --color-ink-850: #0c101b;
+  --color-ink-800: #111624;
+  --color-ink-700: #1a2032;
+  --color-ink-600: #262e45;
+  --color-ink-500: #3a4462;
+
+  --color-legacy: #f5a524;
+  --color-legacy-soft: #fcd34d;
+  --color-legacy-deep: #b45309;
+  --color-modern: #22d3ee;
+  --color-modern-soft: #a5f3fc;
+  --color-modern-deep: #0e7490;
+  --color-match: #34d399;
+  --color-diff: #fb7185;
+  --color-agent: #a78bfa;
+
+  --animate-spin-slow: spin 3s linear infinite;
+  --animate-grid: grid-drift 24s linear infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-dash: dash 1.2s linear infinite;
+  --animate-ping-slow: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+  @keyframes grid-drift {
+    from {
+      background-position: 0 0, 0 0;
+    }
+    to {
+      background-position: 48px 48px, 48px 48px;
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+  @keyframes dash {
+    to {
+      stroke-dashoffset: -20;
+    }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ink-950);
+  color: #dfe4ee;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: rgb(34 211 238 / 0.3);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #232a3d;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #313a55;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@utility glass {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.015));
+  border: 1px solid rgb(255 255 255 / 0.07);
+  backdrop-filter: blur(14px);
+}
+
+@utility text-gradient {
+  background: linear-gradient(95deg, var(--color-legacy) 0%, #f7d794 35%, var(--color-modern-soft) 65%, var(--color-modern) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-gradient-migrate {
+  background: linear-gradient(95deg, var(--color-legacy), var(--color-modern));
+}
+
+@utility shimmer-text {
+  background: linear-gradient(90deg, #7c86a3 0%, #e7ecf6 50%, #7c86a3 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+@utility grid-backdrop {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Syntax colors for sugar-high */
+:root {
+  --sh-class: #7dd3fc;
+  --sh-identifier: #dfe4ee;
+  --sh-sign: #7c86a3;
+  --sh-property: #93c5fd;
+  --sh-entity: #67e8f9;
+  --sh-jsxliterals: #c4b5fd;
+  --sh-string: #fcd34d;
+  --sh-keyword: #f0abfc;
+  --sh-comment: #5b6582;
+}
+
+/* React Flow, dressed for the dark ink theme */
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__controls {
+  box-shadow: none !important;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--color-ink-800) !important;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06) !important;
+  fill: #aab3c8 !important;
+}
+.react-flow__controls-button:hover {
+  background: var(--color-ink-700) !important;
+}
+.react-flow__minimap {
+  background: var(--color-ink-900) !important;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 12px;
+}
+.react-flow__edge-textbg {
+  fill: var(--color-ink-900);
+}
+.react-flow__edge-text {
+  fill: #9aa4bd;
+  font-size: 10px;
+}
+.react-flow__handle {
+  opacity: 0;
+}
