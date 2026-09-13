@@ -445,7 +445,13 @@ export class Pipeline {
     if (cached) return cached
     const state = await this.deps.store.loadState(project)
     const activity = await readJson(join(project.workspace, artifacts.activity))
-    if (Array.isArray(activity)) this.deps.bus.seed(project.id, activity as Activity[])
+    // Nothing is running right after a restart, so replayed items cannot still be in progress.
+    if (Array.isArray(activity)) {
+      this.deps.bus.seed(
+        project.id,
+        (activity as Activity[]).map((a) => (a.status === "running" ? { ...a, status: "done" as const } : a)),
+      )
+    }
     this.states.set(project.id, state)
     return state
   }
