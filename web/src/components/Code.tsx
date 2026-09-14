@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { highlight } from "sugar-high"
 import { api, type FileWindow } from "../lib/api"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 import { jsonLines, touches } from "../lib/json"
 import { CopyButton, Spinner } from "./ui"
 
@@ -22,6 +23,7 @@ export function CodeView({
   className?: string
   tone?: "amber" | "cyan"
 }) {
+  const { t } = useI18n()
   const [data, setData] = useState<FileWindow>()
   const [error, setError] = useState<string>()
 
@@ -57,10 +59,10 @@ export function CodeView({
       <div className="max-h-96 overflow-auto py-2 font-mono text-[12px] leading-[1.6]">
         {!data && !error && (
           <div className="flex items-center gap-2 px-3 py-2 text-slate-500">
-            <Spinner /> Loading
+            <Spinner /> {t("code.loading")}
           </div>
         )}
-        {error && <div className="px-3 py-2 text-slate-500">Source not available: {error}</div>}
+        {error && <div className="px-3 py-2 text-slate-500">{t("code.unavailable", { error })}</div>}
         {data &&
           highlighted.map((html, i) => {
             const line = data.from + i
@@ -96,16 +98,17 @@ export function JsonView({
   value,
   diffPaths = [],
   className,
-  empty = "(empty body)",
+  empty,
 }: {
   value: unknown
   diffPaths?: string[]
   className?: string
   empty?: string
 }) {
+  const { t } = useI18n()
   const lines = useMemo(() => (typeof value === "string" || value === undefined ? [] : jsonLines(value)), [value])
   if (value === undefined || value === "") {
-    return <div className={cn("px-3 py-2 font-mono text-[12px] text-slate-600 italic", className)}>{empty}</div>
+    return <div className={cn("px-3 py-2 font-mono text-[12px] text-slate-600 italic", className)}>{empty ?? t("code.emptyBody")}</div>
   }
   if (typeof value === "string") {
     return (

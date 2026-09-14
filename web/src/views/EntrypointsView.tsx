@@ -5,12 +5,16 @@ import type { Activity } from "../../../src/shared/types"
 import { Button, EmptyState, MethodBadge, Panel, Stat, StatusIcon } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 import { BATCH_STEPS, batchProgress, hasOutput, isRunning, nextBatchPhase, phaseStatus } from "../lib/pipeline"
+import { useReplayView } from "../lib/project"
 import { navigate } from "../lib/router"
 import { batchIcon } from "../lib/tech"
 import { Callout, PhaseAction, PhaseHeader, Working } from "./common"
 
 export function EntrypointsView({ snapshot, activity }: { snapshot: Snapshot; activity: Activity[] }) {
+  const { t } = useI18n()
+  const { active: replaying } = useReplayView()
   const entrypoints = snapshot.entrypoints
   const running = phaseStatus(snapshot, "entrypoints") === "running"
   const id = snapshot.project.id
@@ -21,36 +25,32 @@ export function EntrypointsView({ snapshot, activity }: { snapshot: Snapshot; ac
     <div className="flex flex-col gap-8">
       <PhaseHeader
         icon={Waypoints}
-        eyebrow="Step 2 · Discovery"
-        title="Entry points"
-        blurb="Every way the outside world triggers behavior, grouped into coherent batches. Each batch is dispatched and proven on its own."
+        eyebrow={t("entry.eyebrow")}
+        title={t("entry.title")}
+        blurb={t("entry.blurb")}
         snapshot={snapshot}
         phase="entrypoints"
-        action={<PhaseAction snapshot={snapshot} phase="entrypoints" label="Find entry points" />}
+        action={<PhaseAction snapshot={snapshot} phase="entrypoints" label={t("entry.run")} />}
       />
 
-      {!entrypoints && running && <Working activity={activity} phaseKey="entrypoints" title="Tracing routes, jobs and consumers" />}
+      {!entrypoints && running && <Working activity={activity} phaseKey="entrypoints" title={t("entry.working")} />}
       {!entrypoints && !running && (
-        <EmptyState
-          icon={Waypoints}
-          title="No entry points yet"
-          action={<PhaseAction snapshot={snapshot} phase="entrypoints" label="Find entry points" />}
-        >
-          {snapshot.discovery ? "Ready when you are." : "Map the architecture first — this step builds on it."}
+        <EmptyState icon={Waypoints} title={t("entry.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="entrypoints" label={t("entry.run")} />}>
+          {snapshot.discovery ? t("entry.emptyReady") : t("entry.emptyNeeds")}
         </EmptyState>
       )}
 
       {entrypoints && (
         <>
-          {!snapshot.environment && (
+          {!replaying && !snapshot.environment && (
             <Callout
               tone="amber"
               icon={Container}
-              title="Prepare the legacy runtime"
+              title={t("entry.runtimeTitle")}
               action={
                 phaseStatus(snapshot, "environment") === "running" ? (
                   <Button size="sm" variant="outline" onClick={() => navigate(`/m/${id}/environment`)}>
-                    <StatusIcon status="running" className="size-4" /> In progress
+                    <StatusIcon status="running" className="size-4" /> {t("entry.inProgress")}
                   </Button>
                 ) : (
                   <Button
@@ -62,25 +62,25 @@ export function EntrypointsView({ snapshot, activity }: { snapshot: Snapshot; ac
                       navigate(`/m/${id}/environment`)
                     }}
                   >
-                    Containerize legacy
+                    {t("entry.containerize")}
                   </Button>
                 )
               }
             >
-              Characterization tests run against the real legacy app. Containerize it once with its dependencies before dispatching batches.
+              {t("entry.runtimeText")}
             </Callout>
           )}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="entry points" value={entrypoints.entrypoints.length} icon={Waypoints} tone="text-cyan-300" />
-            <Stat label="HTTP routes" value={http} icon={Globe} tone="text-emerald-300" />
-            <Stat label="jobs, consumers & others" value={other} icon={Workflow} tone="text-violet-300" />
-            <Stat label="batches" value={entrypoints.batches.length} icon={Layers} tone="text-amber-300" />
+            <Stat label={t("stat.entrypoints")} value={entrypoints.entrypoints.length} icon={Waypoints} tone="text-cyan-300" />
+            <Stat label={t("stat.httpRoutes")} value={http} icon={Globe} tone="text-emerald-300" />
+            <Stat label={t("stat.otherEntrypoints")} value={other} icon={Workflow} tone="text-violet-300" />
+            <Stat label={t("stat.batches")} value={entrypoints.batches.length} icon={Layers} tone="text-amber-300" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
             {entrypoints.batches.map((batch, i) => (
-              <BatchCard key={batch.id} snapshot={snapshot} batch={batch} index={i} />
+              <BatchCard key={batch.id} snapshot={snapshot} batch={batch} index={i} replaying={replaying} />
             ))}
           </div>
         </>
@@ -89,7 +89,8 @@ export function EntrypointsView({ snapshot, activity }: { snapshot: Snapshot; ac
   )
 }
 
-function BatchCard({ snapshot, batch, index }: { snapshot: Snapshot; batch: Batch; index: number }) {
+function BatchCard({ snapshot, batch, index, replaying }: { snapshot: Snapshot; batch: Batch; index: number; replaying: boolean }) {
+  const { t } = useI18n()
   const id = snapshot.project.id
   const Icon = batchIcon(batch.icon)
   const progress = batchProgress(snapshot, batch.id)
@@ -97,7 +98,7 @@ function BatchCard({ snapshot, batch, index }: { snapshot: Snapshot; batch: Batc
   const running = isRunning(snapshot, batch.id)
   const lookup = new Map(snapshot.entrypoints?.entrypoints.map((e) => [e.id, e]))
   const items = batch.entrypoints.flatMap((e) => lookup.get(e) ?? [])
-  const started = BATCH_STEPS.some((s) => hasOutput(snapshot, s.phase, batch.id))
+  const started = BATCH_STEPS.some((phase) => hasOutput(snapshot, phase, batch.id))
   const open = () => navigate(`/m/${id}/batch/${batch.id}`)
 
   return (
@@ -146,19 +147,19 @@ function BatchCard({ snapshot, batch, index }: { snapshot: Snapshot; batch: Batc
             </span>
           </li>
         ))}
-        {items.length > 7 && <li className="px-2 py-1 text-xs text-slate-500">+{items.length - 7} more</li>}
+        {items.length > 7 && <li className="px-2 py-1 text-xs text-slate-500">{t("batch.more", { count: items.length - 7 })}</li>}
       </ul>
 
       <div className="mt-auto flex items-center gap-2 border-t border-white/5 px-5 py-3">
         <span className="text-xs text-slate-500">
-          {progress.proven ? "Proven identical to legacy" : running ? "Agent working on this batch" : `${progress.done} of ${progress.total} steps`}
+          {progress.proven ? t("batch.proven") : running ? t("batch.working") : t("batch.steps", { done: progress.done, total: progress.total })}
         </span>
         <span className="flex-1" />
         {running ? (
           <Button size="sm" variant="outline" onClick={open}>
-            <StatusIcon status="running" className="size-4" /> Watch
+            <StatusIcon status="running" className="size-4" /> {t("batch.watch")}
           </Button>
-        ) : next && !started ? (
+        ) : next && !started && !replaying ? (
           <Button
             size="sm"
             variant="primary"
@@ -168,11 +169,11 @@ function BatchCard({ snapshot, batch, index }: { snapshot: Snapshot; batch: Batc
               open()
             }}
           >
-            Dispatch batch
+            {t("batch.dispatch")}
           </Button>
         ) : (
           <Button size="sm" variant="outline" icon={<ArrowRight className="size-3.5" />} onClick={open}>
-            Open
+            {t("common.open")}
           </Button>
         )}
       </div>

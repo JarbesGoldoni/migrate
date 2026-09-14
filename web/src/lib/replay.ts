@@ -46,7 +46,7 @@ export function buildClock(times: number[]): Clock {
 }
 
 /** Phases that start another phase from inside themselves: the parent's output exists once the child starts. */
-const INLINE_CHILD: Partial<Record<PhaseName, PhaseName>> = { tests: "legacy", port: "parity" }
+const INLINE_CHILD: Partial<Record<PhaseName, PhaseName>> = { tests: "legacy", verify: "legacy", port: "parity", reconcile: "parity" }
 
 type Window = { start: number; end: number; state: PhaseState }
 
@@ -164,6 +164,7 @@ export function frameAt(source: Snapshot, history: Activity[], clock: Clock, pos
       builds: pick(source.builds, (batch, build) => shown(`port:${batch}`, build.at)),
       parity: pick(source.parity, (batch, run) => shown(`parity:${batch}`, run.at)),
       reconcile: pick(source.reconcile, (batch) => shown(`reconcile:${batch}`)),
+      verify: pick(source.verify ?? {}, (batch) => shown(`verify:${batch}`)),
     },
   }
 }
@@ -180,6 +181,7 @@ function revealed(source: Snapshot, key: string) {
     port: source.ports[batch],
     parity: source.parity[batch],
     reconcile: source.reconcile[batch],
+    verify: source.verify?.[batch],
   }
   return outputs[phase] !== undefined
 }

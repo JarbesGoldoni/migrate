@@ -29,6 +29,7 @@ import { PHASES, type PhaseDefinition, type PhaseOps } from "./phases"
 import { probeProject } from "./preflight"
 import { composeProject, type PromptContext, TARGETS, targetOf } from "./prompts"
 import { artifacts, type Store, writeJson } from "./store"
+import { type Captures, resolveRequest } from "./testing/captures"
 import { compareExpectation, compareResponses } from "./testing/compare"
 import { writeCurlScripts } from "./testing/curl"
 import { sendRequest } from "./testing/http"
@@ -247,6 +248,7 @@ export class Pipeline {
         batch,
         parity: batchId ? snapshot.parity[batchId] : undefined,
         tests: batchId ? snapshot.tests[batchId] : undefined,
+        legacyRun: batchId ? snapshot.legacyRuns[batchId] : undefined,
       }
       const title = `${definition.title}${batch ? ` · ${batch.title}` : ""}`
       this.activity(project, key, {
@@ -383,9 +385,11 @@ export class Pipeline {
       await this.setRuntime(project, { legacy: alive ? "up" : "failed" })
       if (!alive) return { batch: batchId, at: Date.now(), baseUrl, results: [], error: "Legacy did not answer over HTTP" }
       const results = []
+      const captured: Captures = new Map()
       for (const testCase of tests.cases) {
         if (signal.aborted) throw new Error("Stopped")
-        const response = await sendRequest(baseUrl, testCase.request, { timeoutMs: this.deps.httpTimeoutMs })
+        const response = await sendRequest(baseUrl, resolveRequest(testCase.request, captured), { timeoutMs: this.deps.httpTimeoutMs })
+        captured.set(testCase.id, response)
         const expectation = compareExpectation(testCase.expect, response, testCase.ignore)
         results.push({ caseId: testCase.id, response, expectation })
         const { method, path } = testCase.request
@@ -499,10 +503,15 @@ export class Pipeline {
       ])
       await this.setRuntime(project, { legacy: legacyAlive ? "up" : "failed", v2: v2Alive ? "up" : "failed" })
       const results = []
+      // Each side captures its own values: tokens and ids differ between legacy and v2.
+      const legacyCaptured: Captures = new Map()
+      const v2Captured: Captures = new Map()
       for (const testCase of tests.cases) {
         if (signal?.aborted) throw new Error("Stopped")
-        const legacy = await sendRequest(legacyUrl, testCase.request, { timeoutMs: this.deps.httpTimeoutMs })
-        const v2 = await sendRequest(v2Url, testCase.request, { timeoutMs: this.deps.httpTimeoutMs })
+        const legacy = await sendRequest(legacyUrl, resolveRequest(testCase.request, legacyCaptured), { timeoutMs: this.deps.httpTimeoutMs })
+        const v2 = await sendRequest(v2Url, resolveRequest(testCase.request, v2Captured), { timeoutMs: this.deps.httpTimeoutMs })
+        legacyCaptured.set(testCase.id, legacy)
+        v2Captured.set(testCase.id, v2)
         const comparison = compareResponses(legacy, v2, testCase.ignore)
         results.push({ caseId: testCase.id, legacy, v2, comparison })
         this.activity(project, key, {

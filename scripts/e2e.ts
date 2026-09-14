@@ -37,6 +37,7 @@ const produced = async (phase: PhaseName, batch?: string) => {
     port: batch ? s.ports[batch] : undefined,
     parity: batch ? s.parity[batch] : undefined,
     reconcile: batch ? s.reconcile[batch] : undefined,
+    verify: batch ? s.verify[batch] : undefined,
   }
   return outputs[phase] !== undefined
 }

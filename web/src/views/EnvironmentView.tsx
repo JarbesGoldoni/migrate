@@ -7,15 +7,18 @@ import { CommandBlock } from "../components/Code"
 import { Badge, Button, EmptyState, Panel } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
+import type { Key } from "../lib/i18n-core"
 import { phaseStatus } from "../lib/pipeline"
+import { useReplayView } from "../lib/project"
 import { TARGET_TECH } from "../lib/tech"
 import { PhaseAction, PhaseHeader, SectionTitle, Working } from "./common"
 
 type Service = NonNullable<Snapshot["environment"]>["services"][number]
 
-const STATUS_LABEL: Record<RuntimeStatus, string> = { up: "running", starting: "starting", failed: "not answering", down: "stopped" }
-
 export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; activity: Activity[] }) {
+  const { t } = useI18n()
+  const { active: replaying } = useReplayView()
   const environment = snapshot.environment
   const running = phaseStatus(snapshot, "environment") === "running"
   const project = snapshot.project
@@ -28,64 +31,54 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
     <div className="flex flex-col gap-8">
       <PhaseHeader
         icon={Container}
-        eyebrow="Step 3 · Discovery"
-        title="Legacy runtime"
-        blurb="Legacy runs in containers with real throwaway databases and mocks for third parties. v2 later gets an identical, isolated copy — both sides always start from the same seeded state."
+        eyebrow={t("env.eyebrow")}
+        title={t("env.title")}
+        blurb={t("env.blurb")}
         snapshot={snapshot}
         phase="environment"
-        action={<PhaseAction snapshot={snapshot} phase="environment" label="Containerize legacy" />}
+        action={<PhaseAction snapshot={snapshot} phase="environment" label={t("env.run")} />}
       />
 
-      {!environment && running && <Working activity={activity} phaseKey="environment" title="Building containers and mocks" />}
+      {!environment && running && <Working activity={activity} phaseKey="environment" title={t("env.working")} />}
       {!environment && !running && (
-        <EmptyState icon={Container} title="Legacy is not containerized yet" action={<PhaseAction snapshot={snapshot} phase="environment" label="Containerize legacy" />}>
-          The agent writes a Dockerfile, a compose file with the dependencies it found and stub servers for external APIs, then boots
-          it and checks it answers.
+        <EmptyState icon={Container} title={t("env.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="environment" label={t("env.run")} />}>
+          {t("env.emptyText")}
         </EmptyState>
       )}
 
       {environment && (
         <>
           <div className="grid gap-4 lg:grid-cols-2">
-            <Lane
-              side="legacy"
-              services={legacyServices}
-              status={snapshot.state.runtime.legacy}
-              port={project.ports.legacy}
-              snapshot={snapshot}
-            />
+            <Lane side="legacy" services={legacyServices} status={snapshot.state.runtime.legacy} port={project.ports.legacy} snapshot={snapshot} />
             <Lane side="v2" services={v2Services} status={snapshot.state.runtime.v2} port={project.ports.v2} snapshot={snapshot} />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              loading={busy}
-              icon={<Play className="size-3.5" />}
-              onClick={async () => {
-                setBusy(true)
-                await api.runtime(project.id, "up").catch(() => {})
-                setBusy(false)
-              }}
-            >
-              Start containers
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Square className="size-3.5" />}
-              onClick={() => api.runtime(project.id, "down").catch(() => {})}
-            >
-              Stop and reset
-            </Button>
-          </div>
+          {!replaying && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                loading={busy}
+                icon={<Play className="size-3.5" />}
+                onClick={async () => {
+                  setBusy(true)
+                  await api.runtime(project.id, "up").catch(() => {})
+                  setBusy(false)
+                }}
+              >
+                {t("env.start")}
+              </Button>
+              <Button size="sm" variant="ghost" icon={<Square className="size-3.5" />} onClick={() => api.runtime(project.id, "down").catch(() => {})}>
+                {t("env.stopReset")}
+              </Button>
+            </div>
+          )}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <section>
-              <SectionTitle icon={Drama} title="Mocks" count={environment.mocks.length} />
+              <SectionTitle icon={Drama} title={t("env.mocks")} count={environment.mocks.length} />
               <Panel className="flex flex-col gap-3 p-4">
-                {environment.mocks.length === 0 && <div className="text-sm text-slate-500">No mocks were needed.</div>}
+                {environment.mocks.length === 0 && <div className="text-sm text-slate-500">{t("env.noMocks")}</div>}
                 {environment.mocks.map((mock) => (
                   <div key={mock.dependency} className="flex gap-3">
                     <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-violet-400/10">
@@ -108,9 +101,9 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
               </Panel>
             </section>
             <section>
-              <SectionTitle icon={TriangleAlert} title="Known limitations" count={environment.limitations.length} />
+              <SectionTitle icon={TriangleAlert} title={t("env.limitations")} count={environment.limitations.length} />
               <Panel className="flex flex-col gap-2 p-4">
-                {environment.limitations.length === 0 && <div className="text-sm text-slate-500">None reported.</div>}
+                {environment.limitations.length === 0 && <div className="text-sm text-slate-500">{t("env.noLimitations")}</div>}
                 {environment.limitations.map((item) => (
                   <div key={item} className="flex gap-2 text-sm text-slate-300">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
@@ -122,7 +115,7 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
           </div>
 
           <section>
-            <SectionTitle icon={FileCode2} title="Run it yourself" />
+            <SectionTitle icon={FileCode2} title={t("env.runYourself")} />
             <CommandBlock
               command={`cd ${project.workspace} && docker compose -f ${environment.composeFile} -p migrate-${project.id} build && docker compose -f ${environment.composeFile} -p migrate-${project.id} up -d`}
             />
@@ -133,19 +126,8 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
   )
 }
 
-function Lane({
-  side,
-  services,
-  status,
-  port,
-  snapshot,
-}: {
-  side: "legacy" | "v2"
-  services: Service[]
-  status: RuntimeStatus
-  port: number
-  snapshot: Snapshot
-}) {
+function Lane({ side, services, status, port, snapshot }: { side: "legacy" | "v2"; services: Service[]; status: RuntimeStatus; port: number; snapshot: Snapshot }) {
+  const { t } = useI18n()
   const legacy = side === "legacy"
   const dependencies = snapshot.discovery?.dependencies ?? []
   const runtimeTech = legacy
@@ -165,10 +147,12 @@ function Lane({
           <TechIcon tech={runtimeTech} kind="service" size={22} />
         </div>
         <div className="flex-1">
-          <div className={cn("text-xs font-semibold tracking-[0.18em] uppercase", legacy ? "text-amber-300" : "text-cyan-300")}>{side}</div>
+          <div className={cn("text-xs font-semibold tracking-[0.18em] uppercase", legacy ? "text-amber-300" : "text-cyan-300")}>
+            {legacy ? t("common.legacy") : t("common.v2")}
+          </div>
           <div className="flex items-center gap-2 text-sm text-slate-300">
             <RuntimeDot status={status} />
-            {STATUS_LABEL[status]}
+            {t(`runtime.${status}` as Key)}
           </div>
         </div>
         <a
@@ -184,7 +168,7 @@ function Lane({
       <div className="relative mt-4 grid gap-2 sm:grid-cols-2">
         {services.length === 0 && (
           <div className="rounded-xl border border-dashed border-white/10 p-4 text-center text-xs text-slate-500 sm:col-span-2">
-            {legacy ? "No services recorded." : "Appears once the first batch is ported."}
+            {legacy ? t("env.noServices") : t("env.v2Later")}
           </div>
         )}
         {services.map((service, i) => (
@@ -200,7 +184,9 @@ function Lane({
               <div className="truncate font-mono text-xs text-slate-200">{service.name}</div>
               {service.image && <div className="truncate font-mono text-[10px] text-slate-600">{service.image}</div>}
             </div>
-            <Badge tone={service.role === "mock" ? "violet" : service.role === "dependency" ? "slate" : legacy ? "amber" : "cyan"}>{service.role}</Badge>
+            <Badge tone={service.role === "mock" ? "violet" : service.role === "dependency" ? "slate" : legacy ? "amber" : "cyan"}>
+              {t(`role.${service.role}` as Key)}
+            </Badge>
           </motion.div>
         ))}
       </div>

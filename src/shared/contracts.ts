@@ -428,3 +428,20 @@ export type Reconcile = ReturnType<typeof parseReconcile>
 export function parseReconcile(input: unknown) {
   return ReconcileSchema.parse(input)
 }
+
+// ── Fixing characterization tests against legacy ────────────────────────────
+
+export const VERIFY_ACTIONS = ["request", "setup", "expectation", "removed"] as const
+
+const VerifySchema = obj({
+  batch: text(),
+  fixes: list(obj({ case: text(), cause: text(), action: oneOf(VERIFY_ACTIONS, "expectation"), change: text() })),
+  notes: strings(),
+})
+
+export type Verify = ReturnType<typeof parseVerify>
+
+export function parseVerify(input: unknown) {
+  const raw = VerifySchema.parse(input)
+  return { ...raw, fixes: raw.fixes.filter((f) => f.case) }
+}

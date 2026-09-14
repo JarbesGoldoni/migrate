@@ -4,9 +4,9 @@ import { parseEntryPoints, parseTests } from "../src/shared/contracts"
 import type { ProjectState } from "../src/shared/types"
 import type { Snapshot } from "../web/src/lib/api"
 import { curlFor } from "../web/src/lib/curl"
-import { ago, cn, duration, methodStyle, shortPath, statusTone } from "../web/src/lib/format"
+import { clockTime, cn, duration, methodStyle, shortPath, statusTone } from "../web/src/lib/format"
 import { jsonLines, pretty, touches } from "../web/src/lib/json"
-import { batchProgress, hasOutput, isRunning, nextBatchPhase, phaseState, phaseStatus, totals } from "../web/src/lib/pipeline"
+import { batchProgress, canReplay, hasOutput, isRunning, nextBatchPhase, phaseState, phaseStatus, totals } from "../web/src/lib/pipeline"
 import { batchIcon, brandIcon, readableHex } from "../web/src/lib/tech"
 
 function snapshot(overrides: Partial<Snapshot> = {}, phases: ProjectState["phases"] = {}): Snapshot {
@@ -20,6 +20,7 @@ function snapshot(overrides: Partial<Snapshot> = {}, phases: ProjectState["phase
     builds: {},
     parity: {},
     reconcile: {},
+    verify: {},
     activity: [],
     ...overrides,
   }
@@ -69,6 +70,10 @@ describe("pipeline progress", () => {
     expect(isRunning(midway, "other")).toBe(false)
     expect(isRunning(midway)).toBe(true)
     expect(isRunning(undefined)).toBe(false)
+    expect(canReplay(midway)).toBe(false)
+    expect(canReplay(undefined)).toBe(false)
+    expect(canReplay(empty)).toBe(false)
+    expect(canReplay(snapshot({}, { discover: { status: "done", startedAt: 1, finishedAt: 2 } }))).toBe(true)
     expect(phaseStatus(midway, "discover")).toBe("failed")
     expect(totals(midway)).toEqual({ entrypoints: 1, batches: 1, rules: 1, cases: 1, matched: 1, compared: 2 })
 
@@ -105,13 +110,8 @@ describe("format", () => {
     expect(duration(420)).toBe("420ms")
     expect(duration(42_000)).toBe("42s")
     expect(duration(125_000)).toBe("2m 05s")
-    const now = 10_000_000
-    expect(ago(undefined, now)).toBe("")
-    expect(ago(now - 2_000, now)).toBe("just now")
-    expect(ago(now - 30_000, now)).toBe("30s ago")
-    expect(ago(now - 600_000, now)).toBe("10m ago")
-    expect(ago(now - 7_200_000, now)).toBe("2h ago")
-    expect(ago(now - 3 * 86_400_000, now)).toBe("3d ago")
+    expect(clockTime(-5)).toBe("0:00")
+    expect(clockTime(125_400)).toBe("2:05")
     expect(methodStyle("get")).toContain("emerald")
     expect(methodStyle("TRACE")).toContain("slate")
     expect([0, 200, 302, 404, 500].map(statusTone)).toEqual(["text-rose-300", "text-emerald-300", "text-sky-300", "text-amber-300", "text-rose-300"])

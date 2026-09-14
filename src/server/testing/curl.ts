@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { TestCase, Tests } from "../../shared/contracts"
+import { hasCaptures } from "./captures"
 import { encodeBody } from "./http"
 
 export function shellQuote(value: string) {
@@ -29,6 +30,9 @@ export function curlScript(testCase: TestCase) {
     ...(testCase.branch ? [`# Branch: ${testCase.branch}`] : []),
     ...(testCase.rules.length ? [`# Rules: ${testCase.rules.join(", ")}`] : []),
     `# Expect: HTTP ${testCase.expect.status}`,
+    ...(hasCaptures(testCase.request)
+      ? ["# {{case.$.path}} placeholders take values from earlier cases' responses; fill them in before running this alone."]
+      : []),
     'BASE_URL="${BASE_URL:-http://localhost:8080}"',
     curlCommand(testCase),
     "",

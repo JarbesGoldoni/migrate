@@ -4,15 +4,17 @@ import { useEffect, useState } from "react"
 import { Badge, Button, Panel } from "../components/ui"
 import type { Snapshot } from "../lib/api"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 import { totals } from "../lib/pipeline"
 
 const STAGES = [1, 2, 5, 10, 25, 50, 100]
 const DOTS = 18
 
 export function RolloutView({ snapshot }: { snapshot: Snapshot }) {
+  const { t } = useI18n()
   const [stage, setStage] = useState(0)
   const [playing, setPlaying] = useState(true)
-  const t = totals(snapshot)
+  const numbers = totals(snapshot)
   const percent = STAGES[stage]
 
   useEffect(() => {
@@ -30,22 +32,14 @@ export function RolloutView({ snapshot }: { snapshot: Snapshot }) {
           <Rocket className="size-6 text-slate-100" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">After parity</div>
+          <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("rollout.eyebrow")}</div>
           <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-white">
-            Phased rollout <Badge tone="violet">Illustration</Badge>
+            {t("rollout.title")} <Badge tone="violet">{t("rollout.illustration")}</Badge>
           </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-400">
-            Parity proves behavior on the requests we know. Production proves it on the ones we don't. Traffic moves to v2 in steps —
-            each one holds until the numbers say go, so any surprise is caught at a blast radius that costs nothing.
-          </p>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-400">{t("rollout.blurb")}</p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          icon={playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-          onClick={() => setPlaying((p) => !p)}
-        >
-          {playing ? "Pause" : "Play"}
+        <Button size="sm" variant="outline" icon={playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} onClick={() => setPlaying((p) => !p)}>
+          {playing ? t("rollout.pause") : t("rollout.play")}
         </Button>
       </div>
 
@@ -76,40 +70,37 @@ export function RolloutView({ snapshot }: { snapshot: Snapshot }) {
             animate={{ width: `${100 - percent}%` }}
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
           >
-            {percent < 100 && <span className="font-mono text-sm whitespace-nowrap text-amber-200">legacy {100 - percent}%</span>}
+            {percent < 100 && <span className="font-mono text-sm whitespace-nowrap text-amber-200">{t("rollout.legacyShare", { percent: 100 - percent })}</span>}
           </motion.div>
           <motion.div
             className="flex items-center justify-end bg-gradient-to-r from-cyan-400/10 to-cyan-400/35 px-4"
             animate={{ width: `${percent}%` }}
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
           >
-            <span className="font-mono text-sm whitespace-nowrap text-cyan-100">v2 {percent}%</span>
+            <span className="font-mono text-sm whitespace-nowrap text-cyan-100">{t("rollout.v2Share", { percent })}</span>
           </motion.div>
         </div>
 
         <div className="relative mt-6 grid grid-cols-[80px_1fr] gap-y-3">
-          <Lane label="legacy" tone="amber" count={DOTS - toV2} stage={stage} />
-          <Lane label="v2" tone="cyan" count={toV2} stage={stage} />
+          <Lane label={t("common.legacy")} tone="amber" count={DOTS - toV2} stage={stage} />
+          <Lane label={t("common.v2")} tone="cyan" count={toV2} stage={stage} />
         </div>
       </Panel>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric icon={ShieldCheck} label="Divergences in production" value="0" tone="text-emerald-300" />
-        <Metric icon={Activity} label="Error rate vs legacy" value="±0.00%" tone="text-cyan-300" />
-        <Metric icon={Gauge} label="Blast radius" value={`${percent}% of traffic`} tone="text-amber-300" />
-        <Metric icon={Undo2} label="Rollback" value="one switch" tone="text-violet-300" />
+        <Metric icon={ShieldCheck} label={t("rollout.divergences")} value="0" tone="text-emerald-300" />
+        <Metric icon={Activity} label={t("rollout.errorRate")} value="±0.00%" tone="text-cyan-300" />
+        <Metric icon={Gauge} label={t("rollout.blast")} value={t("rollout.blastValue", { percent })} tone="text-amber-300" />
+        <Metric icon={Undo2} label={t("rollout.rollback")} value={t("rollout.rollbackValue")} tone="text-violet-300" />
       </div>
 
       <Panel className="bg-gradient-to-r from-amber-400/[0.05] via-transparent to-cyan-400/[0.07] p-6">
         <div className="grid gap-6 md:grid-cols-3">
-          <Figure value={t.rules} label="business rules extracted" />
-          <Figure value={t.cases} label="characterization tests" />
-          <Figure value={t.matched} suffix={t.compared ? `/${t.compared}` : ""} label="responses identical to legacy" />
+          <Figure value={numbers.rules} label={t("rollout.rules")} />
+          <Figure value={numbers.cases} label={t("rollout.tests")} />
+          <Figure value={numbers.matched} suffix={numbers.compared ? `/${numbers.compared}` : ""} label={t("rollout.identical")} />
         </div>
-        <p className="mt-6 text-sm leading-relaxed text-slate-400">
-          This whole run happened with nobody driving it. The same method, with people who understand the business owning the rules
-          and the tests, moved a production system handling about 100,000 transactions a day — in phases, with zero incidents.
-        </p>
+        <p className="mt-6 text-sm leading-relaxed text-slate-400">{t("rollout.story")}</p>
       </Panel>
     </div>
   )

@@ -1,5 +1,5 @@
 import type { Batch, Discovery, EntryPoints } from "../shared/contracts"
-import type { Locale, ParityRun, ProjectRecord } from "../shared/types"
+import type { LegacyRun, Locale, ParityRun, ProjectRecord } from "../shared/types"
 import { artifacts } from "./store"
 
 export type PromptContext = {
@@ -9,7 +9,16 @@ export type PromptContext = {
   entrypoints?: EntryPoints
   batch?: Batch
   parity?: ParityRun
-  tests?: { cases: Array<{ id: string; request: unknown }> }
+  legacyRun?: LegacyRun
+  tests?: { cases: Array<{ id: string; request: unknown; expect?: unknown }> }
+}
+
+const CAPTURE_HINT =
+  "write {{<earlier case id>.$.<path in its response body>}} (for example {{login-admin.$.data.token}}) inside the path, a query or header value, or a body string — the runner substitutes the value that case returned"
+
+const clipJson = (value: unknown, max = 1200) => {
+  const s = typeof value === "string" ? value : (JSON.stringify(value) ?? "")
+  return s.length > max ? `${s.slice(0, max)}…` : s
 }
 
 export const TARGETS: Record<string, { label: string; architecture: string; verify: string; image: string }> = {
@@ -279,6 +288,7 @@ Task: write characterization tests for batch "${batch.title}" at the entry-point
 - Only HTTP entry points can be tested this way; skip the others.
 - "expect.body" is what the legacy code returns, predicted from the code. "match": "exact" when the whole body is deterministic, "subset" to assert only stable fields, "status" when only the status matters. List volatile paths such as generated ids and timestamps in "ignore" (JSONPath like "$.id" or "$.items[].createdAt").
 - "branch" names the decision row id the case exercises.
+- When a request needs a value only known at runtime (a token from a login, an id created by an earlier case), ${CAPTURE_HINT}. Never hard-code such values.
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`
@@ -352,6 +362,48 @@ Task: the side-by-side run of batch "${batch.title}" found ${parity.total - pari
 ${mismatches}
 
 Verify once from v2/: \`${target.verify}\`.
+
+JSON shape (example from a different project):
+${JSON.stringify(example, null, 2)}`
+}
+
+export function verifyPrompt(ctx: PromptContext) {
+  const batch = ctx.batch!
+  const run = ctx.legacyRun!
+  const output = artifacts.batch(batch.id, "verify")
+  const testsFile = artifacts.batch(batch.id, "tests")
+  const cases = new Map((ctx.tests?.cases ?? []).map((c) => [c.id, c]))
+  const mismatched = run.results.filter((r) => !r.expectation.match)
+  const listing = mismatched
+    .slice(0, 30)
+    .map(
+      (r) => `### ${r.caseId}
+request: ${clipJson(cases.get(r.caseId)?.request)}
+predicted: ${clipJson(cases.get(r.caseId)?.expect)}
+legacy: ${r.response.error ? `error ${r.response.error}` : `${r.response.status} ${clipJson(r.response.body)}`}
+differences: ${clipJson(r.expectation.diffs.slice(0, 12))}`,
+    )
+    .join("\n\n")
+  const example = {
+    batch: "scheduling",
+    fixes: [
+      { case: "book-ok", cause: "The token of the login case was written literally", action: "request", change: "Authorization uses {{login-patient.$.token}}" },
+      { case: "book-too-late", cause: "Legacy checks notice before the slot exists", action: "expectation", change: "Expects 404 slot_not_found" },
+    ],
+    notes: [],
+  }
+  return `${preamble(ctx, output)}
+
+Task: ${testsFile} was replayed against the real legacy app, freshly seeded, and ${mismatched.length} of ${run.results.length} cases answered differently from the prediction. Legacy is the source of truth; the goal is a suite that describes what legacy really does while still exercising each rule. For each mismatch read the request, the legacy code path and the seeds in migration/env, find out why, then adapt ${testsFile} in place:
+- A broken request (wrong id, missing header or field, a value that must come from an earlier response) → fix the request. To reuse a value, ${CAPTURE_HINT}.
+- Missing setup or a wrong order → add or move a setup case before it.
+- A wrong prediction → set "expect" to what legacy really answers and list volatile fields in "ignore".
+- Only when a case cannot be made deterministic against legacy, remove it — the very last option.
+Keep cases that already match unchanged and keep ids stable. Do not change legacy code, its services or seeds, and do not start containers — the pipeline replays the suite against legacy right after you finish.
+
+${listing}
+
+Record every change below; "action" is one of request, setup, expectation, removed.
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`

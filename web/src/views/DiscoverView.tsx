@@ -7,7 +7,10 @@ import { TechIcon } from "../components/brand"
 import { CommandBlock } from "../components/Code"
 import { Badge, Button, EmptyState, Panel } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
+import { useI18n } from "../lib/i18n"
+import type { Key } from "../lib/i18n-core"
 import { phaseStatus } from "../lib/pipeline"
+import { useReplayView } from "../lib/project"
 import { navigate } from "../lib/router"
 import { DEPENDENCY_KINDS, STRATEGIES } from "../lib/tech"
 import { PhaseAction, PhaseHeader, SectionTitle, Working } from "./common"
@@ -23,6 +26,8 @@ const DEP_NODE_KIND: Record<string, string> = {
 }
 
 export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activity: Activity[] }) {
+  const { t } = useI18n()
+  const { active: replaying } = useReplayView()
   const discovery = snapshot.discovery
   const running = phaseStatus(snapshot, "discover") === "running"
   const id = snapshot.project.id
@@ -34,18 +39,18 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
     <div className="flex flex-col gap-8">
       <PhaseHeader
         icon={Network}
-        eyebrow="Step 1 · Discovery"
-        title="Architecture & dependencies"
-        blurb="The agent reads manifests, entry files and configuration to draw how the system is built, what it depends on and how it runs."
+        eyebrow={t("discover.eyebrow")}
+        title={t("discover.title")}
+        blurb={t("discover.blurb")}
         snapshot={snapshot}
         phase="discover"
-        action={<PhaseAction snapshot={snapshot} phase="discover" label="Map architecture" />}
+        action={<PhaseAction snapshot={snapshot} phase="discover" label={t("discover.run")} />}
       />
 
-      {!discovery && running && <Working activity={activity} phaseKey="discover" title="Reading the codebase" />}
+      {!discovery && running && <Working activity={activity} phaseKey="discover" title={t("discover.working")} />}
       {!discovery && !running && (
-        <EmptyState icon={Network} title="Nothing mapped yet" action={<PhaseAction snapshot={snapshot} phase="discover" label="Map architecture" />}>
-          Start here. Everything else — entry points, rules, tests — builds on this map.
+        <EmptyState icon={Network} title={t("discover.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="discover" label={t("discover.run")} />}>
+          {t("discover.emptyText")}
         </EmptyState>
       )}
 
@@ -72,14 +77,14 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
           </Panel>
 
           <section>
-            <SectionTitle icon={Network} title="Architecture" count={discovery.nodes.length} />
+            <SectionTitle icon={Network} title={t("discover.architecture")} count={discovery.nodes.length} />
             <ArchitectureGraph discovery={discovery} />
           </section>
 
           <section>
-            <SectionTitle icon={Boxes} title="Dependencies" count={discovery.dependencies.length} />
+            <SectionTitle icon={Boxes} title={t("discover.dependencies")} count={discovery.dependencies.length} />
             {discovery.dependencies.length === 0 ? (
-              <Panel className="p-5 text-sm text-slate-400">No external dependencies were found.</Panel>
+              <Panel className="p-5 text-sm text-slate-400">{t("discover.noDependencies")}</Panel>
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {discovery.dependencies.map((dep, i) => (
@@ -90,28 +95,28 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
           </section>
 
           <section>
-            <SectionTitle icon={Terminal} title="How legacy runs" />
+            <SectionTitle icon={Terminal} title={t("discover.howRuns")} />
             <Panel className="grid gap-5 p-5 lg:grid-cols-2">
               <div className="flex flex-col gap-3">
                 {discovery.run.install && <CommandBlock command={discovery.run.install} />}
                 {discovery.run.start && <CommandBlock command={discovery.run.start} />}
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {discovery.run.port > 0 && <Badge tone="amber">port {discovery.run.port}</Badge>}
-                  <Badge>health {discovery.run.healthPath}</Badge>
+                  {discovery.run.port > 0 && <Badge tone="amber">{t("discover.port", { port: discovery.run.port })}</Badge>}
+                  <Badge>{t("discover.health", { path: discovery.run.healthPath })}</Badge>
                 </div>
               </div>
               <div>
                 <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-500">
-                  <KeyRound className="size-3.5" /> Environment
+                  <KeyRound className="size-3.5" /> {t("discover.environment")}
                 </div>
                 {discovery.run.env.length === 0 ? (
-                  <div className="text-sm text-slate-500">No environment variables recorded.</div>
+                  <div className="text-sm text-slate-500">{t("discover.noEnv")}</div>
                 ) : (
                   <div className="overflow-hidden rounded-xl ring-1 ring-white/[0.06]">
                     {discovery.run.env.map((env) => (
                       <div key={env.name} className="flex items-center gap-3 border-b border-white/[0.04] px-3 py-2 last:border-0">
                         <span className="font-mono text-xs text-cyan-200">{env.name}</span>
-                        {env.required && <Badge tone="rose">required</Badge>}
+                        {env.required && <Badge tone="rose">{t("common.required")}</Badge>}
                         <span className="ml-auto truncate font-mono text-[11px] text-slate-500">{env.example}</span>
                       </div>
                     ))}
@@ -121,13 +126,13 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
             </Panel>
           </section>
 
-          {!snapshot.entrypoints && phaseStatus(snapshot, "entrypoints") !== "running" && (
+          {!replaying && !snapshot.entrypoints && phaseStatus(snapshot, "entrypoints") !== "running" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
               <Panel className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-amber-400/[0.06] to-cyan-400/[0.06] p-5">
                 <Waypoints className="size-6 text-cyan-300" />
                 <div className="flex-1">
-                  <div className="font-medium text-white">Next: find every entry point</div>
-                  <div className="text-sm text-slate-400">Routes, jobs and consumers, grouped into batches you can dispatch one by one.</div>
+                  <div className="font-medium text-white">{t("discover.nextTitle")}</div>
+                  <div className="text-sm text-slate-400">{t("discover.nextText")}</div>
                 </div>
                 <Button
                   variant="primary"
@@ -137,7 +142,7 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
                     navigate(`/m/${id}/entrypoints`)
                   }}
                 >
-                  Find entry points
+                  {t("discover.nextAction")}
                 </Button>
               </Panel>
             </motion.div>
@@ -149,6 +154,7 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
 }
 
 function DependencyCard({ dependency, index }: { dependency: Dependency; index: number }) {
+  const { t } = useI18n()
   const strategy = STRATEGIES[dependency.strategy] ?? STRATEGIES.mock
   const KindIcon = DEPENDENCY_KINDS[dependency.kind] ?? Boxes
   return (
@@ -167,12 +173,12 @@ function DependencyCard({ dependency, index }: { dependency: Dependency; index: 
           <div className="truncate font-medium text-white">{dependency.name}</div>
           <div className="flex items-center gap-1 text-xs text-slate-500">
             <KindIcon className="size-3" />
-            {dependency.kind}
+            {t(`dependency.${dependency.kind}` as Key)}
             {dependency.version && ` · ${dependency.version}`}
           </div>
         </div>
         <Badge tone={strategy.tone} icon={strategy.icon}>
-          {strategy.label}
+          {t(`strategy.${dependency.strategy}` as Key)}
         </Badge>
       </div>
       {dependency.notes && <p className="mt-3 text-xs leading-relaxed text-slate-400">{dependency.notes}</p>}

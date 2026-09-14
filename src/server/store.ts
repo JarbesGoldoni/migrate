@@ -8,11 +8,12 @@ import {
   parseReconcile,
   parseRules,
   parseTests,
+  parseVerify,
 } from "../shared/contracts"
 import type { Activity, BuildReport, LegacyRun, ParityRun, ProjectRecord, ProjectSnapshot, ProjectState } from "../shared/types"
 import { projectsFile } from "./paths"
 
-export type BatchArtifact = "rules" | "tests" | "legacy-run" | "port" | "build" | "parity" | "reconcile"
+export type BatchArtifact = "rules" | "tests" | "legacy-run" | "port" | "build" | "parity" | "reconcile" | "verify"
 
 export const artifacts = {
   state: "migration/state.json",
@@ -125,11 +126,12 @@ export class Store {
       builds: {},
       parity: {},
       reconcile: {},
+      verify: {},
     }
     await Promise.all(
       (parsedEntrypoints?.batches ?? []).map(async (batch) => {
-        const [rules, tests, legacyRun, port, build, parity, reconcile] = await Promise.all(
-          (["rules", "tests", "legacy-run", "port", "build", "parity", "reconcile"] as const).map((name) =>
+        const [rules, tests, legacyRun, port, build, parity, reconcile, verify] = await Promise.all(
+          (["rules", "tests", "legacy-run", "port", "build", "parity", "reconcile", "verify"] as const).map((name) =>
             read(artifacts.batch(batch.id, name)),
           ),
         )
@@ -140,6 +142,7 @@ export class Store {
         if (build !== undefined) snapshot.builds[batch.id] = build as BuildReport
         if (parity !== undefined) snapshot.parity[batch.id] = parity as ParityRun
         if (reconcile !== undefined) snapshot.reconcile[batch.id] = parseReconcile(reconcile)
+        if (verify !== undefined) snapshot.verify[batch.id] = parseVerify(verify)
       }),
     )
     return snapshot

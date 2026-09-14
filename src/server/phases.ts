@@ -7,6 +7,7 @@ import {
   parseReconcile,
   parseRules,
   parseTests,
+  parseVerify,
 } from "../shared/contracts"
 import type { PhaseName, ProjectSnapshot } from "../shared/types"
 import {
@@ -18,6 +19,7 @@ import {
   reconcilePrompt,
   rulesPrompt,
   testsPrompt,
+  verifyPrompt,
 } from "./prompts"
 import { artifacts } from "./store"
 
@@ -120,6 +122,29 @@ export const PHASES: Record<PhaseName, PhaseDefinition> = {
       (!s.tests[b!.id] ? "Write the characterization tests first" : !s.environment ? "Containerize legacy first" : undefined),
     after: (ctx) => ctx.ops.runLegacyTests(ctx.batch!.id),
     commit: (b) => `migrate(${b!.id}): record legacy responses`,
+  }),
+
+  verify: makePhase({
+    name: "verify",
+    title: "Fix characterization tests",
+    session: "batch",
+    requires: (s, b) => {
+      const blocked = needsBatch(b)
+      if (blocked) return blocked
+      if (!s.tests[b!.id]) return "Write the characterization tests first"
+      const run = s.legacyRuns[b!.id]
+      if (!run || run.error) return "Run the tests against legacy first"
+      return run.results.some((r) => !r.expectation.match) ? undefined : "Every legacy response already matches the prediction"
+    },
+    output: (b) => artifacts.batch(b!.id, "verify"),
+    prompt: verifyPrompt,
+    parse: parseVerify,
+    // One pass, then the adapted suite is replayed once — no loop.
+    after: async (ctx) => {
+      await ctx.ops.writeCurls(ctx.batch!.id)
+      await ctx.ops.runInline("legacy", ctx.batch!.id)
+    },
+    commit: (b) => `migrate(${b!.id}): fix characterization tests`,
   }),
 
   port: makePhase({

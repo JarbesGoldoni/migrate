@@ -1,15 +1,17 @@
 import type {
+  Activity,
+  Comparison,
   EngineInfo,
   FsListing,
   HttpRequestSpec,
   HttpResult,
-  Comparison,
+  Locale,
+  MigrationListItem,
   ModelRef,
   PhaseName,
   Preflight,
   ProjectRecord,
   ProjectSnapshot,
-  Activity,
 } from "../../../src/shared/types"
 
 export type Snapshot = ProjectSnapshot & { activity: Activity[] }
@@ -37,10 +39,12 @@ export const api = {
   preflight: (path: string) => request<Preflight>(`/api/preflight?path=${encodeURIComponent(path)}`),
   sample: () => request<{ path: string }>("/api/sample", { method: "POST" }),
   projects: () => request<ProjectRecord[]>("/api/projects"),
-  create: (source: string, model: ModelRef | undefined, target: string) =>
-    request<ProjectRecord>("/api/projects", { method: "POST", json: { source, model, target } }),
+  migrations: () => request<MigrationListItem[]>("/api/migrations"),
+  create: (source: string, model: ModelRef | undefined, target: string, language: Locale) =>
+    request<ProjectRecord>("/api/projects", { method: "POST", json: { source, model, target, language } }),
   project: (id: string) => request<Snapshot>(`/api/projects/${id}`),
-  update: (id: string, patch: { model?: ModelRef; target?: string }) =>
+  history: (id: string) => request<Activity[]>(`/api/projects/${id}/history`),
+  update: (id: string, patch: { model?: ModelRef; target?: string; language?: Locale }) =>
     request<ProjectRecord>(`/api/projects/${id}`, { method: "PATCH", json: patch }),
   run: (id: string, phase: PhaseName, batch?: string) =>
     request<{ started: boolean; reason?: string }>(`/api/projects/${id}/run`, { method: "POST", json: { phase, batch } }),

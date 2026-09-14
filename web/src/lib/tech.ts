@@ -330,17 +330,17 @@ export const MARKER_TECH: Record<string, string> = {
   git: "git",
 }
 
-export const NODE_KINDS: Record<string, { icon: LucideIcon; label: string; color: string }> = {
-  client: { icon: MonitorSmartphone, label: "Client", color: "#94a3b8" },
-  gateway: { icon: Waypoints, label: "Gateway", color: "#c4b5fd" },
-  service: { icon: Server, label: "Service", color: "#22d3ee" },
-  module: { icon: Boxes, label: "Module", color: "#67e8f9" },
-  worker: { icon: Cog, label: "Worker", color: "#a78bfa" },
-  datastore: { icon: Database, label: "Datastore", color: "#f5a524" },
-  cache: { icon: Zap, label: "Cache", color: "#fb7185" },
-  queue: { icon: ListOrdered, label: "Queue", color: "#f472b6" },
-  external: { icon: Globe, label: "External", color: "#34d399" },
-  storage: { icon: HardDrive, label: "Storage", color: "#fbbf24" },
+export const NODE_KINDS: Record<string, { icon: LucideIcon; color: string }> = {
+  client: { icon: MonitorSmartphone, color: "#94a3b8" },
+  gateway: { icon: Waypoints, color: "#c4b5fd" },
+  service: { icon: Server, color: "#22d3ee" },
+  module: { icon: Boxes, color: "#67e8f9" },
+  worker: { icon: Cog, color: "#a78bfa" },
+  datastore: { icon: Database, color: "#f5a524" },
+  cache: { icon: Zap, color: "#fb7185" },
+  queue: { icon: ListOrdered, color: "#f472b6" },
+  external: { icon: Globe, color: "#34d399" },
+  storage: { icon: HardDrive, color: "#fbbf24" },
 }
 
 export const DEPENDENCY_KINDS: Record<string, LucideIcon> = {
@@ -353,21 +353,21 @@ export const DEPENDENCY_KINDS: Record<string, LucideIcon> = {
   other: Box,
 }
 
-export const STRATEGIES: Record<string, { icon: LucideIcon; label: string; tone: "cyan" | "violet" | "slate" }> = {
-  container: { icon: Container, label: "Real container", tone: "cyan" },
-  mock: { icon: Drama, label: "Mocked", tone: "violet" },
-  skip: { icon: EyeOff, label: "Not needed", tone: "slate" },
+export const STRATEGIES: Record<string, { icon: LucideIcon; tone: "cyan" | "violet" | "slate" }> = {
+  container: { icon: Container, tone: "cyan" },
+  mock: { icon: Drama, tone: "violet" },
+  skip: { icon: EyeOff, tone: "slate" },
 }
 
-export const RULE_KINDS: Record<string, { icon: LucideIcon; label: string; color: string }> = {
-  validation: { icon: ShieldCheck, label: "Validation", color: "#34d399" },
-  calculation: { icon: Calculator, label: "Calculation", color: "#f5a524" },
-  authorization: { icon: KeyRound, label: "Authorization", color: "#a78bfa" },
-  state: { icon: Workflow, label: "State", color: "#22d3ee" },
-  persistence: { icon: Database, label: "Persistence", color: "#60a5fa" },
-  integration: { icon: Plug, label: "Integration", color: "#f472b6" },
-  error: { icon: TriangleAlert, label: "Error handling", color: "#fb7185" },
-  other: { icon: Sigma, label: "Rule", color: "#94a3b8" },
+export const RULE_KINDS: Record<string, { icon: LucideIcon; color: string }> = {
+  validation: { icon: ShieldCheck, color: "#34d399" },
+  calculation: { icon: Calculator, color: "#f5a524" },
+  authorization: { icon: KeyRound, color: "#a78bfa" },
+  state: { icon: Workflow, color: "#22d3ee" },
+  persistence: { icon: Database, color: "#60a5fa" },
+  integration: { icon: Plug, color: "#f472b6" },
+  error: { icon: TriangleAlert, color: "#fb7185" },
+  other: { icon: Sigma, color: "#94a3b8" },
 }
 
 const BATCH_ICONS: Record<string, LucideIcon> = {

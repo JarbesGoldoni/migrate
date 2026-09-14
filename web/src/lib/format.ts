@@ -14,16 +14,9 @@ export function duration(ms?: number) {
   return `${m}m ${String(s % 60).padStart(2, "0")}s`
 }
 
-export function ago(at?: number, now = Date.now()) {
-  if (!at) return ""
-  const s = Math.max(0, Math.round((now - at) / 1000))
-  if (s < 10) return "just now"
-  if (s < 60) return `${s}s ago`
-  const m = Math.round(s / 60)
-  if (m < 60) return `${m}m ago`
-  const h = Math.round(m / 60)
-  if (h < 48) return `${h}h ago`
-  return `${Math.round(h / 24)}d ago`
+export function clockTime(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
 }
 
 export const METHOD_STYLE: Record<string, string> = {

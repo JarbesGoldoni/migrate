@@ -7,12 +7,13 @@ import type {
   Reconcile,
   Rules,
   Tests,
+  Verify,
 } from "./contracts"
 
 export type PhaseStatus = "idle" | "running" | "done" | "failed"
 
 export const PROJECT_PHASES = ["discover", "entrypoints", "environment"] as const
-export const BATCH_PHASES = ["rules", "tests", "legacy", "port", "parity", "reconcile"] as const
+export const BATCH_PHASES = ["rules", "tests", "legacy", "verify", "port", "parity", "reconcile"] as const
 
 export type ProjectPhase = (typeof PROJECT_PHASES)[number]
 export type BatchPhase = (typeof BATCH_PHASES)[number]
@@ -198,6 +199,7 @@ export type ProjectSnapshot = {
   builds: Record<string, BuildReport>
   parity: Record<string, ParityRun>
   reconcile: Record<string, Reconcile>
+  verify: Record<string, Verify>
 }
 
 export type PreflightCheck = {

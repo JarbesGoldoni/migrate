@@ -19,6 +19,7 @@ import {
   ScrollText,
   Send,
   Server,
+  ShieldCheck,
   Square,
   TriangleAlert,
   Wrench,
@@ -31,8 +32,11 @@ import { CodeView, CommandBlock, JsonView } from "../components/Code"
 import { Badge, Button, EmptyState, MethodBadge, Panel, ProgressRing, Spinner, Stat, Tabs } from "../components/ui"
 import { api, type PlaygroundResult, type Snapshot } from "../lib/api"
 import { curlFor } from "../lib/curl"
-import { ago, cn, statusTone } from "../lib/format"
+import { cn, statusTone } from "../lib/format"
+import { useI18n } from "../lib/i18n"
+import type { Key } from "../lib/i18n-core"
 import { BATCH_STEPS, batchProgress, hasOutput, nextBatchPhase, phaseStatus } from "../lib/pipeline"
+import { useReplayView } from "../lib/project"
 import { navigate } from "../lib/router"
 import { batchIcon, RULE_KINDS } from "../lib/tech"
 import { Callout, Label, PhaseAction, Working } from "./common"
@@ -46,37 +50,43 @@ const TAB_FOR_PHASE: Record<BatchPhase, TabId> = {
   port: "port",
   parity: "parity",
   reconcile: "parity",
+  verify: "tests",
 }
 
 const STEP_ICONS: Record<BatchPhase, LucideIcon> = {
   rules: ScrollText,
   tests: FlaskConical,
+  verify: ShieldCheck,
   legacy: Server,
   port: ArrowRightLeft,
   parity: GitCompareArrows,
   reconcile: Wrench,
 }
 
+const stepLabel = (phase: BatchPhase): Key => `phase.${phase}`
+const stepBlurb = (phase: BatchPhase) => `phase.${phase}.blurb` as Key
+
 function initialTab(snapshot: Snapshot, batchId: string): TabId {
-  const running = BATCH_STEPS.find((s) => phaseStatus(snapshot, s.phase, batchId) === "running")
-  if (running) return TAB_FOR_PHASE[running.phase]
-  const done = [...BATCH_STEPS].reverse().find((s) => hasOutput(snapshot, s.phase, batchId))
-  return done ? TAB_FOR_PHASE[done.phase] : "rules"
+  const running = BATCH_STEPS.find((phase) => phaseStatus(snapshot, phase, batchId) === "running")
+  if (running) return TAB_FOR_PHASE[running]
+  const done = [...BATCH_STEPS].reverse().find((phase) => hasOutput(snapshot, phase, batchId))
+  return done ? TAB_FOR_PHASE[done] : "rules"
 }
 
 export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot; activity: Activity[]; batchId: string }) {
+  const { t } = useI18n()
   const id = snapshot.project.id
   const batch = snapshot.entrypoints?.batches.find((b) => b.id === batchId)
-  const runningStep = BATCH_STEPS.find((s) => phaseStatus(snapshot, s.phase, batchId) === "running")
+  const runningStep = BATCH_STEPS.find((phase) => phaseStatus(snapshot, phase, batchId) === "running")
   const [tab, setTab] = useState<TabId>(() => initialTab(snapshot, batchId))
-  const lastRunning = useRef(runningStep?.phase)
+  const lastRunning = useRef(runningStep)
 
   useEffect(() => {
-    if (runningStep && runningStep.phase !== lastRunning.current) setTab(TAB_FOR_PHASE[runningStep.phase])
-    lastRunning.current = runningStep?.phase
+    if (runningStep && runningStep !== lastRunning.current) setTab(TAB_FOR_PHASE[runningStep])
+    lastRunning.current = runningStep
   }, [runningStep])
 
-  if (!batch) return <EmptyState icon={Layers} title="Batch not found" />
+  if (!batch) return <EmptyState icon={Layers} title={t("batch.label")} />
 
   const Icon = batchIcon(batch.icon)
   const progress = batchProgress(snapshot, batchId)
@@ -96,7 +106,7 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
         onClick={() => navigate(`/m/${id}/entrypoints`)}
         className="flex w-fit cursor-pointer items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300"
       >
-        <ArrowLeft className="size-3.5" /> All batches
+        <ArrowLeft className="size-3.5" /> {t("batch.all")}
       </button>
 
       <div className="flex flex-wrap items-start gap-4">
@@ -104,7 +114,7 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
           <Icon className="size-7 text-white" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">Batch</div>
+          <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("batch.label")}</div>
           <h1 className="text-2xl font-semibold tracking-tight text-white">{batch.title}</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-400">{batch.rationale}</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -118,7 +128,7 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
         </div>
         {progress.proven && (
           <Badge tone="emerald" icon={BadgeCheck}>
-            Proven identical
+            {t("batch.provenBadge")}
           </Badge>
         )}
       </div>
@@ -134,12 +144,12 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
         onChange={setTab}
         className="w-fit"
         tabs={[
-          { id: "rules", label: "Rules", icon: ScrollText, badge: ruleCount ? count(ruleCount) : undefined },
-          { id: "tests", label: "Tests", icon: FlaskConical, badge: tests ? count(tests.cases.length) : undefined },
-          { id: "port", label: "v2 code", icon: ArrowRightLeft },
+          { id: "rules", label: t("tab.rules"), icon: ScrollText, badge: ruleCount ? count(ruleCount) : undefined },
+          { id: "tests", label: t("tab.tests"), icon: FlaskConical, badge: tests ? count(tests.cases.length) : undefined },
+          { id: "port", label: t("tab.port"), icon: ArrowRightLeft },
           {
             id: "parity",
-            label: "Parity",
+            label: t("tab.parity"),
             icon: GitCompareArrows,
             badge: parity ? (
               <span
@@ -152,35 +162,37 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
               </span>
             ) : undefined,
           },
-          { id: "playground", label: "Try it", icon: Send },
+          { id: "playground", label: t("tab.playground"), icon: Send },
         ]}
       />
 
       <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-          {tab === "rules" && <RulesTab snapshot={snapshot} batchId={batchId} activity={activity} />}
-          {tab === "tests" && <TestsTab snapshot={snapshot} batchId={batchId} activity={activity} />}
-          {tab === "port" && <PortTab snapshot={snapshot} batchId={batchId} activity={activity} />}
-          {tab === "parity" && <ParityTab snapshot={snapshot} batchId={batchId} activity={activity} />}
-          {tab === "playground" && <PlaygroundTab snapshot={snapshot} batchId={batchId} />}
+        {tab === "rules" && <RulesTab snapshot={snapshot} batchId={batchId} activity={activity} />}
+        {tab === "tests" && <TestsTab snapshot={snapshot} batchId={batchId} activity={activity} />}
+        {tab === "port" && <PortTab snapshot={snapshot} batchId={batchId} activity={activity} />}
+        {tab === "parity" && <ParityTab snapshot={snapshot} batchId={batchId} activity={activity} />}
+        {tab === "playground" && <PlaygroundTab snapshot={snapshot} batchId={batchId} />}
       </motion.div>
     </div>
   )
 }
 
 function Stepper({ snapshot, batchId, next, onSelect }: { snapshot: Snapshot; batchId: string; next?: BatchPhase; onSelect: (tab: TabId) => void }) {
+  const { t } = useI18n()
   const parity = snapshot.parity[batchId]
   return (
-    <div className="flex items-start overflow-x-auto pb-1">
-      {BATCH_STEPS.map((step, i) => {
-        const status = phaseStatus(snapshot, step.phase, batchId)
-        const done = hasOutput(snapshot, step.phase, batchId)
-        const notNeeded = step.phase === "reconcile" && !done && parity && parity.total > 0 && parity.matched === parity.total
+    // Horizontal scrolling clips vertically too, so leave room for the running ring and the pulse.
+    <div className="-my-2 flex items-start overflow-x-auto px-1 py-2">
+      {BATCH_STEPS.map((phase, i) => {
+        const status = phaseStatus(snapshot, phase, batchId)
+        const done = hasOutput(snapshot, phase, batchId)
+        const notNeeded = phase === "reconcile" && !done && parity && parity.total > 0 && parity.matched === parity.total
         const visual =
-          status === "running" ? "running" : done || notNeeded ? "done" : status === "failed" ? "failed" : next === step.phase ? "next" : "idle"
-        const Icon = STEP_ICONS[step.phase]
+          status === "running" ? "running" : done || notNeeded ? "done" : status === "failed" ? "failed" : next === phase ? "next" : "idle"
+        const Icon = STEP_ICONS[phase]
         return (
-          <Fragment key={step.phase}>
-            <button type="button" onClick={() => onSelect(TAB_FOR_PHASE[step.phase])} className="flex w-28 shrink-0 cursor-pointer flex-col items-center gap-2 text-center">
+          <Fragment key={phase}>
+            <button type="button" onClick={() => onSelect(TAB_FOR_PHASE[phase])} className="flex w-28 shrink-0 cursor-pointer flex-col items-center gap-2 text-center">
               <div
                 className={cn(
                   "relative grid size-12 place-items-center rounded-full ring-1 transition",
@@ -209,17 +221,12 @@ function Stepper({ snapshot, batchId, next, onSelect }: { snapshot: Snapshot; ba
                 />
                 {visual === "done" && <CircleCheck className="absolute -right-0.5 -bottom-0.5 size-4 rounded-full bg-ink-900 text-emerald-400" />}
               </div>
-              <div className={cn("text-xs font-medium", visual === "idle" ? "text-slate-500" : "text-slate-200")}>{step.label}</div>
-              {notNeeded && <div className="-mt-1.5 text-[10px] text-slate-500">not needed</div>}
+              <div className={cn("text-xs font-medium", visual === "idle" ? "text-slate-500" : "text-slate-200")}>{t(stepLabel(phase))}</div>
+              {notNeeded && <div className="-mt-1.5 text-[10px] text-slate-500">{t("step.notNeeded")}</div>}
             </button>
             {i < BATCH_STEPS.length - 1 && (
               <div className="relative mt-6 h-0.5 min-w-6 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
-                <motion.div
-                  className="absolute inset-y-0 left-0 bg-gradient-migrate"
-                  initial={{ width: 0 }}
-                  animate={{ width: done ? "100%" : "0%" }}
-                  transition={{ duration: 0.8 }}
-                />
+                <motion.div className="absolute inset-y-0 left-0 bg-gradient-migrate" initial={{ width: 0 }} animate={{ width: done ? "100%" : "0%" }} transition={{ duration: 0.8 }} />
               </div>
             )}
           </Fragment>
@@ -229,17 +236,9 @@ function Stepper({ snapshot, batchId, next, onSelect }: { snapshot: Snapshot; ba
   )
 }
 
-function NextBar({
-  snapshot,
-  batchId,
-  next,
-  runningStep,
-}: {
-  snapshot: Snapshot
-  batchId: string
-  next?: BatchPhase
-  runningStep?: (typeof BATCH_STEPS)[number]
-}) {
+function NextBar({ snapshot, batchId, next, runningStep }: { snapshot: Snapshot; batchId: string; next?: BatchPhase; runningStep?: BatchPhase }) {
+  const { t } = useI18n()
+  const { active: replaying } = useReplayView()
   const id = snapshot.project.id
   const [reason, setReason] = useState<string>()
   const [pending, setPending] = useState(false)
@@ -249,22 +248,45 @@ function NextBar({
       <Panel className="flex items-center gap-3 px-4 py-3 ring-1 ring-cyan-400/20">
         <Spinner className="size-5 text-cyan-300" />
         <div className="flex-1">
-          <div className="shimmer-text text-sm font-medium">{runningStep.label} in progress</div>
-          <div className="text-xs text-slate-500">{runningStep.blurb}</div>
+          <div className="shimmer-text text-sm font-medium">{t("next.inProgress", { step: t(stepLabel(runningStep)) })}</div>
+          <div className="text-xs text-slate-500">{t(stepBlurb(runningStep))}</div>
         </div>
-        <Button variant="danger" size="sm" icon={<Square className="size-3.5" />} onClick={() => api.stop(id, runningStep.phase, batchId)}>
-          Stop
-        </Button>
+        {!replaying && (
+          <Button variant="danger" size="sm" icon={<Square className="size-3.5" />} onClick={() => api.stop(id, runningStep, batchId)}>
+            {t("common.stop")}
+          </Button>
+        )}
       </Panel>
     )
   }
+
+  if (!next) {
+    return (
+      <Callout
+        tone="emerald"
+        icon={BadgeCheck}
+        title={t("next.doneTitle")}
+        action={
+          replaying ? undefined : (
+            <Button size="sm" variant="outline" icon={<Rocket className="size-3.5" />} onClick={() => navigate(`/m/${id}/rollout`)}>
+              {t("next.howShips")}
+            </Button>
+          )
+        }
+      >
+        {t("next.doneText")}
+      </Callout>
+    )
+  }
+
+  if (replaying) return null
 
   if (next === "legacy" && !snapshot.environment) {
     return (
       <Callout
         tone="amber"
         icon={Container}
-        title="Containerize legacy before running the tests"
+        title={t("next.containerizeTitle")}
         action={
           <Button
             size="sm"
@@ -274,33 +296,15 @@ function NextBar({
               navigate(`/m/${id}/environment`)
             }}
           >
-            Containerize legacy
+            {t("entry.containerize")}
           </Button>
         }
       >
-        The characterization tests are ready — they need the real legacy app to answer them.
+        {t("next.containerizeText")}
       </Callout>
     )
   }
 
-  if (!next) {
-    return (
-      <Callout
-        tone="emerald"
-        icon={BadgeCheck}
-        title="Every response is identical to legacy"
-        action={
-          <Button size="sm" variant="outline" icon={<Rocket className="size-3.5" />} onClick={() => navigate(`/m/${id}/rollout`)}>
-            How it ships
-          </Button>
-        }
-      >
-        This batch is ready for a phased rollout.
-      </Callout>
-    )
-  }
-
-  const step = BATCH_STEPS.find((s) => s.phase === next)!
   const StepIcon = STEP_ICONS[next]
   return (
     <Panel className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-amber-400/[0.05] to-cyan-400/[0.06] px-4 py-3">
@@ -308,8 +312,8 @@ function NextBar({
         <StepIcon className="size-4 text-white" />
       </div>
       <div className="flex-1">
-        <div className="text-sm font-medium text-white">Next · {step.label}</div>
-        <div className="text-xs text-slate-400">{step.blurb}</div>
+        <div className="text-sm font-medium text-white">{t("next.label", { step: t(stepLabel(next)) })}</div>
+        <div className="text-xs text-slate-400">{t(stepBlurb(next))}</div>
         {reason && <div className="text-xs text-amber-300">{reason}</div>}
       </div>
       <Button
@@ -324,7 +328,7 @@ function NextBar({
           setReason(result.started ? undefined : result.reason)
         }}
       >
-        Run {step.label.toLowerCase()}
+        {t("next.run", { step: t(stepLabel(next)) })}
       </Button>
     </Panel>
   )
@@ -333,6 +337,7 @@ function NextBar({
 // ── Rules ──────────────────────────────────────────────────────────────────
 
 function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId: string; activity: Activity[] }) {
+  const { t } = useI18n()
   const rules = snapshot.rules[batchId]
   const id = snapshot.project.id
   const running = phaseStatus(snapshot, "rules", batchId) === "running"
@@ -340,10 +345,10 @@ function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
 
   if (!rules) {
     return running ? (
-      <Working activity={activity} phaseKey={`rules:${batchId}`} title="Tracing each entry point end to end" />
+      <Working activity={activity} phaseKey={`rules:${batchId}`} title={t("rules.working")} />
     ) : (
-      <EmptyState icon={ScrollText} title="Rules not extracted yet" action={<PhaseAction snapshot={snapshot} phase="rules" batch={batchId} label="Extract business rules" />}>
-        The agent follows each entry point from the handler to the database and back, and writes down every decision the code makes.
+      <EmptyState icon={ScrollText} title={t("rules.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="rules" batch={batchId} label={t("rules.run")} />}>
+        {t("rules.emptyText")}
       </EmptyState>
     )
   }
@@ -351,7 +356,7 @@ function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
   return (
     <div className="flex flex-col gap-5">
       <div className="flex justify-end">
-        <PhaseAction snapshot={snapshot} phase="rules" batch={batchId} label="Extract business rules" rerunLabel="Extract again" />
+        <PhaseAction snapshot={snapshot} phase="rules" batch={batchId} label={t("rules.run")} rerunLabel={t("rules.again")} />
       </div>
       {rules.entrypoints.map((ep, i) => {
         const entry = lookup.get(ep.entrypoint)
@@ -361,7 +366,7 @@ function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
               <div className="flex flex-wrap items-center gap-2.5">
                 <MethodBadge method={entry?.method} kind={entry?.kind} />
                 <span className="font-mono text-sm text-white">{entry?.path || entry?.name || ep.entrypoint}</span>
-                <Badge>{ep.rules.length} rules</Badge>
+                <Badge>{t("rules.count", { count: ep.rules.length })}</Badge>
               </div>
               {entry?.summary && <p className="mt-1.5 text-sm text-slate-400">{entry.summary}</p>}
               {ep.flow.length > 0 && <Flow flow={ep.flow} projectId={id} />}
@@ -379,10 +384,11 @@ function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
 }
 
 function Flow({ flow, projectId }: { flow: Array<{ file: string; line: number; description: string }>; projectId: string }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState<number>()
   return (
     <div className="mt-5">
-      <Label>Call chain</Label>
+      <Label>{t("rules.callChain")}</Label>
       <ol className="flex flex-col">
         {flow.map((step, i) => (
           <motion.li
@@ -421,18 +427,14 @@ function Flow({ flow, projectId }: { flow: Array<{ file: string; line: number; d
 }
 
 function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; projectId: string }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const meta = RULE_KINDS[rule.kind] ?? RULE_KINDS.other
   const KindIcon = meta.icon
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className="flex flex-col rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.06]"
-    >
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="flex flex-col rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.06]">
       <div className="flex items-start gap-3">
-        <div className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${meta.color}1f`, color: meta.color }}>
+        <div className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: `${meta.color}1f`, color: meta.color }} title={t(`ruleKind.${rule.kind}` as Key)}>
           <KindIcon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
@@ -446,9 +448,9 @@ function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; proje
       {rule.decisions.length > 0 && (
         <div className="mt-3 overflow-hidden rounded-lg ring-1 ring-white/[0.06]">
           <div className="grid grid-cols-[1fr_16px_1fr] gap-2 bg-white/[0.03] px-3 py-1.5 text-[10px] tracking-wider text-slate-500 uppercase">
-            <span>When</span>
+            <span>{t("rules.when")}</span>
             <span />
-            <span>Then</span>
+            <span>{t("rules.then")}</span>
           </div>
           {rule.decisions.map((decision) => (
             <div key={decision.id} className="grid grid-cols-[1fr_16px_1fr] items-start gap-2 border-t border-white/[0.04] px-3 py-2 text-[12.5px]">
@@ -460,11 +462,7 @@ function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; proje
         </div>
       )}
       {rule.file && (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="mt-3 flex w-fit cursor-pointer items-center gap-1.5 text-xs text-amber-300/90 hover:text-amber-200"
-        >
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mt-3 flex w-fit cursor-pointer items-center gap-1.5 text-xs text-amber-300/90 hover:text-amber-200">
           <FileCode2 className="size-3.5" />
           {rule.file}
           {rule.lineStart ? `:${rule.lineStart}${rule.lineEnd > rule.lineStart ? `-${rule.lineEnd}` : ""}` : ""}
@@ -479,6 +477,7 @@ function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; proje
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId: string; activity: Activity[] }) {
+  const { t } = useI18n()
   const tests = snapshot.tests[batchId]
   const run = snapshot.legacyRuns[batchId]
   const running = phaseStatus(snapshot, "tests", batchId) === "running"
@@ -486,10 +485,10 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
 
   if (!tests) {
     return running ? (
-      <Working activity={activity} phaseKey={`tests:${batchId}`} title="Writing characterization tests" />
+      <Working activity={activity} phaseKey={`tests:${batchId}`} title={t("tests.working")} />
     ) : (
-      <EmptyState icon={FlaskConical} title="No tests yet" action={<PhaseAction snapshot={snapshot} phase="tests" batch={batchId} label="Write tests" />}>
-        Real HTTP requests at the entry-point boundary — one for every branch in the rules. Executable curls you keep forever.
+      <EmptyState icon={FlaskConical} title={t("tests.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="tests" batch={batchId} label={t("tests.run")} />}>
+        {t("tests.emptyText")}
       </EmptyState>
     )
   }
@@ -497,48 +496,75 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
   const results = new Map(run?.results.map((r) => [r.caseId, r]))
   const covered = new Set(tests.cases.flatMap((c) => c.rules)).size
   const predicted = run?.results.filter((r) => r.expectation.match).length ?? 0
+  const mismatched = run && !run.error ? run.results.length - predicted : 0
+  const verifying = phaseStatus(snapshot, "verify", batchId) === "running"
+  const verify = snapshot.verify?.[batchId]
+  const fixLabel = t("tests.fix", { count: mismatched })
 
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="test cases" value={tests.cases.length} icon={FlaskConical} tone="text-cyan-300" />
-        <Stat label="rules exercised" value={covered} icon={ScrollText} tone="text-violet-300" />
-        <Stat label="recorded on legacy" value={run?.results.length ?? 0} icon={Server} tone="text-amber-300" />
-        <Stat label="matched the prediction" value={predicted} icon={CircleCheck} tone="text-emerald-300" />
+        <Stat label={t("stat.cases")} value={tests.cases.length} icon={FlaskConical} tone="text-cyan-300" />
+        <Stat label={t("stat.rulesExercised")} value={covered} icon={ScrollText} tone="text-violet-300" />
+        <Stat label={t("stat.recorded")} value={run?.results.length ?? 0} icon={Server} tone="text-amber-300" />
+        <Stat label={t("stat.predicted")} value={predicted} icon={CircleCheck} tone="text-emerald-300" />
       </div>
 
       {run?.error && (
-        <Callout tone="rose" icon={TriangleAlert} title="Legacy did not answer">
-          {run.error}. Check the legacy runtime, then run the tests again.
+        <Callout tone="rose" icon={TriangleAlert} title={t("tests.noAnswerTitle")}>
+          {t("tests.noAnswerText", { error: run.error })}
         </Callout>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="text-sm text-slate-400">
-          {run
-            ? "Legacy's answers are the source of truth — where they differ from what the code seemed to say, legacy wins."
-            : "These tests have not been run against legacy yet."}
-        </div>
-        <span className="flex-1" />
-        <PhaseAction snapshot={snapshot} phase="legacy" batch={batchId} label="Run against legacy" rerunLabel="Replay on legacy" />
+        {run && !run.error && (
+          <Badge tone={mismatched ? "amber" : "emerald"} icon={mismatched ? Info : CircleCheck}>
+            {t("tests.score", { agreed: predicted, total: run.results.length })}
+          </Badge>
+        )}
+        <div className="min-w-0 flex-1 text-sm text-slate-400">{run ? t("tests.truth") : t("tests.notRun")}</div>
+        <PhaseAction snapshot={snapshot} phase="legacy" batch={batchId} label={t("tests.runLegacy")} rerunLabel={t("tests.replayLegacy")} />
+        {(mismatched > 0 || verifying) && (
+          <PhaseAction snapshot={snapshot} phase="verify" batch={batchId} label={fixLabel} rerunLabel={fixLabel} forceVariant="primary" />
+        )}
       </div>
+
+      {verifying && (
+        <div className="flex items-center gap-2 text-sm">
+          <Spinner className="text-violet-300" />
+          <span className="shimmer-text">{t("tests.fixing")}</span>
+        </div>
+      )}
 
       {legacyRunning && (
         <div className="flex items-center gap-2 text-sm">
           <Spinner className="text-amber-300" />
-          <span className="shimmer-text">Resetting legacy to seeded state and replaying every request</span>
+          <span className="shimmer-text">{t("tests.replaying")}</span>
         </div>
+      )}
+
+      {verify && verify.fixes.length > 0 && (
+        <Panel className="p-5">
+          <Label>{t("verify.title")}</Label>
+          {verify.fixes.map((fix, i) => (
+            <div key={`${fix.case}-${i}`} className="flex gap-3 border-b border-white/[0.04] py-2.5 last:border-0">
+              <ShieldCheck className={cn("mt-0.5 size-4 shrink-0", fix.action === "removed" ? "text-rose-300" : "text-violet-300")} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-white">
+                  <span className="font-mono text-xs text-slate-400">{fix.case}</span>
+                  <Badge tone={fix.action === "removed" ? "rose" : "slate"}>{t(`verify.action.${fix.action}` as Key)}</Badge>
+                  <span>{fix.cause}</span>
+                </div>
+                <div className="text-sm text-slate-400">{fix.change}</div>
+              </div>
+            </div>
+          ))}
+        </Panel>
       )}
 
       <div className="flex flex-col gap-2">
         {tests.cases.map((testCase, i) => (
-          <CaseRow
-            key={testCase.id}
-            testCase={testCase}
-            result={results.get(testCase.id)}
-            index={i}
-            baseUrl={`http://127.0.0.1:${snapshot.project.ports.legacy}`}
-          />
+          <CaseRow key={testCase.id} testCase={testCase} result={results.get(testCase.id)} index={i} baseUrl={`http://127.0.0.1:${snapshot.project.ports.legacy}`} />
         ))}
       </div>
     </div>
@@ -546,15 +572,11 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
 }
 
 function CaseRow({ testCase, result, index, baseUrl }: { testCase: TestCase; result?: LegacyCaseRun; index: number; baseUrl: string }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const query = new URLSearchParams(testCase.request.query).toString()
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index, 14) * 0.03 }}
-      className="overflow-hidden rounded-xl bg-white/[0.025] ring-1 ring-white/[0.06]"
-    >
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 14) * 0.03 }} className="overflow-hidden rounded-xl bg-white/[0.025] ring-1 ring-white/[0.06]">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left">
         <MethodBadge method={testCase.request.method} />
         <div className="min-w-0 flex-1">
@@ -565,20 +587,20 @@ function CaseRow({ testCase, result, index, baseUrl }: { testCase: TestCase; res
           </div>
         </div>
         {testCase.branch && <span className="hidden max-w-40 truncate font-mono text-[10px] text-violet-300/80 lg:inline">{testCase.branch}</span>}
-        <span className="hidden font-mono text-xs text-slate-500 sm:inline">expects {testCase.expect.status}</span>
+        <span className="hidden font-mono text-xs text-slate-500 sm:inline">{t("case.expects", { status: testCase.expect.status })}</span>
         {result ? (
           <span
             className={cn(
               "flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs",
               result.response.error ? "bg-rose-400/10 text-rose-300" : result.expectation.match ? "bg-emerald-400/10 text-emerald-300" : "bg-amber-400/10 text-amber-300",
             )}
-            title={result.expectation.match ? "Legacy answered as predicted" : "Legacy answered differently from the prediction"}
+            title={result.expectation.match ? t("case.asPredicted") : t("case.differs")}
           >
             {result.expectation.match ? <CircleCheck className="size-3.5" /> : <Info className="size-3.5" />}
-            legacy {result.response.error ? "—" : result.response.status}
+            {t("common.legacy")} {result.response.error ? "—" : result.response.status}
           </span>
         ) : (
-          <span className="text-xs text-slate-600">not run</span>
+          <span className="text-xs text-slate-600">{t("case.notRun")}</span>
         )}
         <ChevronDown className={cn("size-4 text-slate-500 transition", open && "rotate-180")} />
       </button>
@@ -587,11 +609,11 @@ function CaseRow({ testCase, result, index, baseUrl }: { testCase: TestCase; res
           <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="overflow-hidden">
             <div className="grid gap-4 border-t border-white/5 p-4 lg:grid-cols-2">
               <div className="min-w-0">
-                <Label>Executable curl</Label>
+                <Label>{t("case.curl")}</Label>
                 <CommandBlock command={curlFor(testCase, baseUrl)} />
                 {testCase.rules.length > 0 && (
                   <>
-                    <Label>Exercises</Label>
+                    <Label>{t("case.exercises")}</Label>
                     <div className="flex flex-wrap gap-1">
                       {testCase.rules.map((r) => (
                         <span key={r} className="rounded-md bg-violet-400/10 px-1.5 py-0.5 font-mono text-[10px] text-violet-200">
@@ -603,16 +625,14 @@ function CaseRow({ testCase, result, index, baseUrl }: { testCase: TestCase; res
                 )}
               </div>
               <div className="min-w-0">
-                <Label>
-                  Predicted from the code · HTTP {testCase.expect.status} · {testCase.expect.match}
-                </Label>
+                <Label>{t("case.predicted", { status: testCase.expect.status, match: testCase.expect.match })}</Label>
                 <div className="rounded-xl bg-black/30 ring-1 ring-white/[0.06]">
-                  <JsonView value={testCase.expect.body ?? undefined} empty="(status only)" />
+                  <JsonView value={testCase.expect.body ?? undefined} empty={t("case.statusOnly")} />
                 </div>
                 {result && (
                   <>
                     <Label>
-                      Legacy answered · {result.response.error ?? `HTTP ${result.response.status}`} · {result.response.durationMs}ms
+                      {t("case.legacyAnswered", { status: result.response.error ?? `HTTP ${result.response.status}`, ms: result.response.durationMs })}
                     </Label>
                     <div className="rounded-xl bg-black/30 ring-1 ring-amber-400/15">
                       <JsonView value={result.response.body} diffPaths={result.expectation.diffs.map((d) => d.path)} className="max-h-80" />
@@ -631,6 +651,7 @@ function CaseRow({ testCase, result, index, baseUrl }: { testCase: TestCase; res
 // ── Port ───────────────────────────────────────────────────────────────────
 
 function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId: string; activity: Activity[] }) {
+  const { t } = useI18n()
   const port = snapshot.ports[batchId]
   const build = snapshot.builds[batchId]
   const id = snapshot.project.id
@@ -647,11 +668,10 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
 
   if (!port) {
     return running ? (
-      <Working activity={activity} phaseKey={`port:${batchId}`} title="Writing v2" />
+      <Working activity={activity} phaseKey={`port:${batchId}`} title={t("port.working")} />
     ) : (
-      <EmptyState icon={ArrowRightLeft} title="Not ported yet" action={<PhaseAction snapshot={snapshot} phase="port" batch={batchId} label="Port to v2" />}>
-        Rules become pure functions, a single handler factory maps them to HTTP exactly like legacy, and v2 is containerized next to
-        it with its own copy of every dependency.
+      <EmptyState icon={ArrowRightLeft} title={t("port.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="port" batch={batchId} label={t("port.run")} />}>
+        {t("port.emptyText")}
       </EmptyState>
     )
   }
@@ -660,12 +680,12 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
     <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <div className="flex flex-col gap-4">
         <Panel className="p-4">
-          <Label>Build</Label>
-          {build ? build.steps.map((step) => <BuildStepRow key={step.name} step={step} />) : <div className="text-sm text-slate-500">Not built yet</div>}
+          <Label>{t("port.build")}</Label>
+          {build ? build.steps.map((step) => <BuildStepRow key={step.name} step={step} />) : <div className="text-sm text-slate-500">{t("port.notBuilt")}</div>}
         </Panel>
         <Panel className="p-2">
           <div className="px-2 pt-2">
-            <Label>v2 files</Label>
+            <Label>{t("port.files")}</Label>
           </div>
           <FileTree files={files} selected={selected} onSelect={setSelected} />
         </Panel>
@@ -674,15 +694,15 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
         {selected ? (
           <>
             <Button size="xs" variant="ghost" className="w-fit" icon={<ArrowLeft className="size-3.5" />} onClick={() => setSelected(undefined)}>
-              Overview
+              {t("port.overview")}
             </Button>
             <CodeView projectId={id} path={selected} tone="cyan" />
           </>
         ) : (
           <>
             <Panel className="p-5">
-              <Label>Routes</Label>
-              {port.routes.length === 0 && <div className="text-sm text-slate-500">No routes reported.</div>}
+              <Label>{t("port.routes")}</Label>
+              {port.routes.length === 0 && <div className="text-sm text-slate-500">{t("port.noRoutes")}</div>}
               {port.routes.map((route) => (
                 <div key={`${route.method}-${route.path}`} className="flex items-center gap-2 border-b border-white/[0.04] py-2 last:border-0">
                   <MethodBadge method={route.method} />
@@ -692,8 +712,8 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
               ))}
             </Panel>
             <Panel className="p-5">
-              <Label>Rule → function</Label>
-              {port.mapping.length === 0 && <div className="text-sm text-slate-500">No mapping reported.</div>}
+              <Label>{t("port.mapping")}</Label>
+              {port.mapping.length === 0 && <div className="text-sm text-slate-500">{t("port.noMapping")}</div>}
               {port.mapping.map((m) => (
                 <button
                   type="button"
@@ -710,7 +730,7 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
             </Panel>
             {port.notes.length > 0 && (
               <Panel className="p-5">
-                <Label>Notes</Label>
+                <Label>{t("port.notes")}</Label>
                 <ul className="flex flex-col gap-1.5">
                   {port.notes.map((note) => (
                     <li key={note} className="flex gap-2 text-sm text-slate-300">
@@ -729,30 +749,24 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
 }
 
 function BuildStepRow({ step }: { step: BuildStep }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(!step.ok && !step.skipped)
   return (
     <div className="border-b border-white/[0.04] py-1.5 last:border-0">
       <button type="button" onClick={() => step.output && setOpen((o) => !o)} className="flex w-full cursor-pointer items-center gap-2 text-left text-sm">
-        {step.skipped ? (
-          <CircleDashed className="size-4 text-slate-500" />
-        ) : step.ok ? (
-          <CircleCheck className="size-4 text-emerald-400" />
-        ) : (
-          <CircleX className="size-4 text-rose-400" />
-        )}
+        {step.skipped ? <CircleDashed className="size-4 text-slate-500" /> : step.ok ? <CircleCheck className="size-4 text-emerald-400" /> : <CircleX className="size-4 text-rose-400" />}
         <span className="flex-1 text-slate-200">{step.name}</span>
-        {step.skipped && <span className="text-[10px] text-slate-500">skipped</span>}
+        {step.skipped && <span className="text-[10px] text-slate-500">{t("common.skipped")}</span>}
         {step.output && <ChevronDown className={cn("size-3.5 text-slate-500 transition", open && "rotate-180")} />}
       </button>
-      {open && step.output && (
-        <pre className="mt-1.5 max-h-60 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10.5px] whitespace-pre-wrap text-slate-400">{step.output}</pre>
-      )}
+      {open && step.output && <pre className="mt-1.5 max-h-60 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10.5px] whitespace-pre-wrap text-slate-400">{step.output}</pre>}
     </div>
   )
 }
 
 function FileTree({ files, selected, onSelect }: { files: string[]; selected?: string; onSelect: (file: string) => void }) {
-  if (files.length === 0) return <div className="px-3 pb-3 text-sm text-slate-500">No files yet</div>
+  const { t } = useI18n()
+  if (files.length === 0) return <div className="px-3 pb-3 text-sm text-slate-500">{t("port.noFiles")}</div>
   const groups = new Map<string, string[]>()
   for (const file of files) {
     const rel = file.replace(/^v2\//, "")
@@ -792,6 +806,8 @@ function FileTree({ files, selected, onSelect }: { files: string[]; selected?: s
 // ── Parity ─────────────────────────────────────────────────────────────────
 
 function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId: string; activity: Activity[] }) {
+  const { t, ago } = useI18n()
+  const { active: replaying } = useReplayView()
   const parity = snapshot.parity[batchId]
   const tests = snapshot.tests[batchId]
   const reconcile = snapshot.reconcile[batchId]
@@ -801,11 +817,10 @@ function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchI
 
   if (!parity) {
     return running ? (
-      <Working activity={activity} phaseKey={`parity:${batchId}`} title="Sending every request to legacy and v2" />
+      <Working activity={activity} phaseKey={`parity:${batchId}`} title={t("parity.working")} />
     ) : (
-      <EmptyState icon={GitCompareArrows} title="No side-by-side run yet" action={<PhaseAction snapshot={snapshot} phase="parity" batch={batchId} label="Run parity" />}>
-        Both systems are reset to the same seeded state, then every characterization request goes to each and the responses are
-        compared field by field.
+      <EmptyState icon={GitCompareArrows} title={t("parity.emptyTitle")} action={<PhaseAction snapshot={snapshot} phase="parity" batch={batchId} label={t("parity.run")} />}>
+        {t("parity.emptyText")}
       </EmptyState>
     )
   }
@@ -819,31 +834,31 @@ function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchI
     <div className="flex flex-col gap-5">
       <Panel className={cn("relative flex flex-wrap items-center gap-6 overflow-hidden p-6", all && "ring-1 ring-emerald-400/30")}>
         {all && (
-          <motion.div
-            className="pointer-events-none absolute inset-0 bg-emerald-400/[0.05]"
-            animate={{ opacity: [0.4, 1, 0.4] }}
-            transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }}
-          />
+          <motion.div className="pointer-events-none absolute inset-0 bg-emerald-400/[0.05]" animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 3, repeat: Number.POSITIVE_INFINITY }} />
         )}
-        <ProgressRing value={parity.matched} total={parity.total} label="identical" />
+        <ProgressRing value={parity.matched} total={parity.total} label={t("parity.identical")} />
         <div className="relative min-w-0 flex-1">
           <div className="text-xl font-semibold text-white">
-            {all ? "Every response identical" : `${differing} response${differing === 1 ? "" : "s"} differ${differing === 1 ? "s" : ""}`}
+            {all ? t("parity.allIdentical") : differing === 1 ? t("parity.differOne") : t("parity.differMany", { count: differing })}
           </div>
-          <div className="mt-1 text-sm text-slate-400">Same request, same seeded state, both systems · {ago(parity.at)}</div>
+          {!replaying && <div className="mt-1 text-sm text-slate-400">{t("parity.subtitle", { ago: ago(parity.at) })}</div>}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Badge tone="amber">legacy · 127.0.0.1:{ports.legacy}</Badge>
-            <Badge tone="cyan">v2 · 127.0.0.1:{ports.v2}</Badge>
+            <Badge tone="amber">
+              {t("common.legacy")} · 127.0.0.1:{ports.legacy}
+            </Badge>
+            <Badge tone="cyan">
+              {t("common.v2")} · 127.0.0.1:{ports.v2}
+            </Badge>
           </div>
         </div>
         <div className="relative flex flex-col items-end gap-2">
-          {!all && <PhaseAction snapshot={snapshot} phase="reconcile" batch={batchId} label="Reconcile divergences" rerunLabel="Reconcile again" forceVariant="primary" />}
-          <PhaseAction snapshot={snapshot} phase="parity" batch={batchId} label="Run parity" rerunLabel="Run parity again" forceVariant="outline" />
+          {!all && <PhaseAction snapshot={snapshot} phase="reconcile" batch={batchId} label={t("parity.reconcile")} rerunLabel={t("parity.reconcileAgain")} forceVariant="primary" />}
+          <PhaseAction snapshot={snapshot} phase="parity" batch={batchId} label={t("parity.run")} rerunLabel={t("parity.again")} forceVariant="outline" />
         </div>
       </Panel>
 
       {parity.error && (
-        <Callout tone="rose" icon={TriangleAlert} title="Not everything answered">
+        <Callout tone="rose" icon={TriangleAlert} title={t("parity.notAnswered")}>
           {parity.error}
         </Callout>
       )}
@@ -851,13 +866,13 @@ function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchI
       {reconciling && (
         <div className="flex items-center gap-2 text-sm">
           <Spinner className="text-violet-300" />
-          <span className="shimmer-text">The agent is reconciling v2 against the legacy code</span>
+          <span className="shimmer-text">{t("parity.reconciling")}</span>
         </div>
       )}
 
       {reconcile && reconcile.fixes.length > 0 && (
         <Panel className="p-5">
-          <Label>Last reconcile</Label>
+          <Label>{t("parity.lastReconcile")}</Label>
           {reconcile.fixes.map((fix, i) => (
             <div key={`${fix.case}-${i}`} className="flex gap-3 border-b border-white/[0.04] py-2.5 last:border-0">
               <Wrench className="mt-0.5 size-4 shrink-0 text-violet-300" />
@@ -888,6 +903,7 @@ const short = (value: unknown) => {
 }
 
 function ParityRow({ result, testCase, index }: { result: ParityCase; testCase?: TestCase; index: number }) {
+  const { t } = useI18n()
   const match = result.comparison.match
   const [open, setOpen] = useState(!match && index === 0)
   const diffPaths = result.comparison.diffs.map((d) => d.path)
@@ -915,13 +931,13 @@ function ParityRow({ result, testCase, index }: { result: ParityCase; testCase?:
           <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="overflow-hidden">
             <div className="grid gap-3 border-t border-white/5 p-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <div className="min-w-0">
-                <Label>Request</Label>
+                <Label>{t("parity.request")}</Label>
                 <div className="overflow-hidden rounded-xl bg-black/30 ring-1 ring-white/[0.06]">
                   <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
                     <MethodBadge method={method} className="w-auto px-1.5" />
                     <span className="truncate font-mono text-xs text-slate-200">{testCase?.request.path}</span>
                   </div>
-                  <JsonView value={testCase?.request.body ?? undefined} empty="(no body)" />
+                  <JsonView value={testCase?.request.body ?? undefined} empty={t("parity.noBody")} />
                 </div>
               </div>
               <ResponsePane side="legacy" result={result.legacy} diffPaths={diffPaths} />
@@ -930,9 +946,9 @@ function ParityRow({ result, testCase, index }: { result: ParityCase; testCase?:
             {result.comparison.diffs.length > 0 && (
               <div className="border-t border-white/5 px-4 py-3">
                 <div className="grid grid-cols-3 gap-3 pb-1 text-[10px] tracking-wider text-slate-500 uppercase">
-                  <span>Path</span>
-                  <span className="text-amber-300/70">Legacy</span>
-                  <span className="text-cyan-300/70">v2</span>
+                  <span>{t("parity.path")}</span>
+                  <span className="text-amber-300/70">{t("common.legacy")}</span>
+                  <span className="text-cyan-300/70">{t("common.v2")}</span>
                 </div>
                 {result.comparison.diffs.slice(0, 20).map((diff, i) => (
                   <div key={`${diff.path}-${i}`} className="grid grid-cols-3 gap-3 py-1 font-mono text-[11.5px]">
@@ -961,10 +977,11 @@ function StatusChip({ tone, result }: { tone: "amber" | "cyan"; result: HttpResu
 }
 
 function ResponsePane({ side, result, diffPaths }: { side: "legacy" | "v2"; result: HttpResult; diffPaths: string[] }) {
+  const { t } = useI18n()
   const legacy = side === "legacy"
   return (
     <div className="min-w-0">
-      <Label>{legacy ? "Legacy" : "v2"}</Label>
+      <Label>{legacy ? t("common.legacy") : t("common.v2")}</Label>
       <div className={cn("overflow-hidden rounded-xl bg-black/30 ring-1", legacy ? "ring-amber-400/20" : "ring-cyan-400/20")}>
         <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2 text-xs">
           <span className={cn("size-2 rounded-full", legacy ? "bg-amber-400" : "bg-cyan-400")} />
@@ -986,6 +1003,7 @@ function ResponsePane({ side, result, diffPaths }: { side: "legacy" | "v2"; resu
 // ── Playground ─────────────────────────────────────────────────────────────
 
 function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: string }) {
+  const { t } = useI18n()
   const tests = snapshot.tests[batchId]
   const id = snapshot.project.id
   const runtime = snapshot.state.runtime
@@ -1012,7 +1030,7 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
     try {
       parsedHeaders = headers.trim() ? JSON.parse(headers) : {}
     } catch {
-      setError("Headers must be a JSON object")
+      setError(t("play.headersError"))
       return
     }
     let parsedBody: unknown
@@ -1035,11 +1053,12 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
   }
 
   const inputClass = "rounded-xl bg-black/30 ring-1 ring-white/10 outline-none focus:ring-cyan-400/40"
+  const diffCount = result?.comparison?.diffs.length ?? 0
   return (
     <div className="flex flex-col gap-4">
       {(runtime.legacy !== "up" || runtime.v2 !== "up") && (
-        <Callout tone="cyan" icon={Info} title="Both runtimes need to be running">
-          Start them from the top bar. Requests here go to legacy and v2 at the same time, without resetting state.
+        <Callout tone="cyan" icon={Info} title={t("play.runtimeTitle")}>
+          {t("play.runtimeText")}
         </Callout>
       )}
       <Panel className="p-4">
@@ -1057,15 +1076,15 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
             className={cn(inputClass, "h-10 min-w-0 flex-1 px-3 font-mono text-sm text-white")}
           />
           <Button variant="primary" loading={sending} icon={<Send className="size-4" />} onClick={send}>
-            Send to both
+            {t("play.send")}
           </Button>
         </div>
         {tests && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500">Start from a test:</span>
+            <span className="text-xs text-slate-500">{t("play.fromTest")}</span>
             <select onChange={(e) => load(e.target.value)} defaultValue="" className={cn(inputClass, "h-8 max-w-full px-2 text-xs text-slate-200")}>
               <option value="" disabled>
-                Choose…
+                {t("play.choose")}
               </option>
               {tests.cases.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -1077,11 +1096,11 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
         )}
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           <div>
-            <Label>Headers (JSON)</Label>
+            <Label>{t("play.headers")}</Label>
             <textarea value={headers} onChange={(e) => setHeaders(e.target.value)} rows={5} spellCheck={false} className={cn(inputClass, "w-full p-3 font-mono text-xs text-slate-200")} />
           </div>
           <div>
-            <Label>Body</Label>
+            <Label>{t("play.body")}</Label>
             <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} spellCheck={false} className={cn(inputClass, "w-full p-3 font-mono text-xs text-slate-200")} />
           </div>
         </div>
@@ -1094,11 +1113,11 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
               <div>
                 {result.comparison.match ? (
                   <Badge tone="emerald" icon={CircleCheck}>
-                    Identical responses
+                    {t("play.identical")}
                   </Badge>
                 ) : (
                   <Badge tone="rose" icon={CircleX}>
-                    {result.comparison.diffs.length} difference{result.comparison.diffs.length === 1 ? "" : "s"}
+                    {diffCount === 1 ? t("play.diffOne") : t("play.diffMany", { count: diffCount })}
                   </Badge>
                 )}
               </div>

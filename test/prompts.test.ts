@@ -10,6 +10,7 @@ import {
   rulesPrompt,
   targetOf,
   testsPrompt,
+  verifyPrompt,
 } from "../src/server/prompts"
 import { parseDiscovery, parseEntryPoints } from "../src/shared/contracts"
 import type { ProjectRecord } from "../src/shared/types"
@@ -112,5 +113,32 @@ describe("prompts", () => {
     expect(prompt).toContain('request: {"method":"GET","path":"/api/products"}')
     expect(prompt).toContain("…")
     expect(prompt).toContain('"migration/batches/catalog/reconcile.json"')
+  })
+
+  test("tests and verify prompts explain captures; verify lists legacy mismatches only", () => {
+    expect(testsPrompt(ctx)).toContain("{{<earlier case id>.$.")
+    const ok = { status: 200, body: { a: 1 }, headers: {}, text: "", durationMs: 1 }
+    const prompt = verifyPrompt({
+      ...ctx,
+      tests: { cases: [{ id: "c1", request: { method: "GET", path: "/api/products" }, expect: { status: 201 } }] },
+      legacyRun: {
+        batch: "catalog",
+        at: 1,
+        baseUrl: "",
+        results: [
+          { caseId: "c0", response: ok, expectation: { match: true, diffs: [] } },
+          { caseId: "c1", response: ok, expectation: { match: false, diffs: [{ path: "$.status", kind: "changed", expected: 201, actual: 200 }] } },
+          { caseId: "c2", response: { ...ok, status: 0, error: "refused" }, expectation: { match: false, diffs: [] } },
+        ],
+      },
+    })
+    expect(prompt).toContain("2 of 3 cases")
+    expect(prompt).toContain("### c1")
+    expect(prompt).not.toContain("### c0")
+    expect(prompt).toContain('predicted: {"status":201}')
+    expect(prompt).toContain('legacy: 200 {"a":1}')
+    expect(prompt).toContain("legacy: error refused")
+    expect(prompt).toContain("{{<earlier case id>.$.")
+    expect(prompt).toContain('"migration/batches/catalog/verify.json"')
   })
 })

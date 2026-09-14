@@ -20,6 +20,7 @@ function source(phases: ProjectState["phases"]): Snapshot {
     builds: {},
     parity: { b: { batch: "b", at: T + 40_000, matched: 1, total: 1, results: [] } },
     reconcile: {},
+    verify: {},
     activity: [],
   }
 }

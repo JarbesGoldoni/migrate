@@ -1,12 +1,13 @@
-import { Play, RotateCcw, Sparkles, Square } from "lucide-react"
+import { type LucideIcon, Play, RotateCcw, Sparkles, Square } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { type ReactNode, useEffect, useState } from "react"
 import type { Activity, PhaseName } from "../../../src/shared/types"
 import { Badge, Button, StatusIcon } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
-import { ago, cn, duration } from "../lib/format"
+import { cn, duration } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 import { hasOutput, phaseState } from "../lib/pipeline"
-import type { LucideIcon } from "lucide-react"
+import { useReplayView } from "../lib/project"
 
 export function useNow(active: boolean, interval = 1000) {
   const [now, setNow] = useState(() => Date.now())
@@ -23,7 +24,7 @@ export function PhaseAction({
   phase,
   batch,
   label,
-  rerunLabel = "Run again",
+  rerunLabel,
   forceVariant,
 }: {
   snapshot: Snapshot
@@ -33,15 +34,19 @@ export function PhaseAction({
   rerunLabel?: string
   forceVariant?: "primary" | "outline"
 }) {
+  const { t } = useI18n()
+  const { active: replaying } = useReplayView()
   const [reason, setReason] = useState<string>()
   const [pending, setPending] = useState(false)
+  if (replaying) return null
+
   const state = phaseState(snapshot, phase, batch)
   const id = snapshot.project.id
 
   if (state.status === "running") {
     return (
       <Button variant="danger" size="sm" icon={<Square className="size-3.5" />} onClick={() => api.stop(id, phase, batch)}>
-        Stop
+        {t("common.stop")}
       </Button>
     )
   }
@@ -64,7 +69,7 @@ export function PhaseAction({
           }
         }}
       >
-        {done ? rerunLabel : label}
+        {done ? (rerunLabel ?? t("common.runAgain")) : label}
       </Button>
       <AnimatePresence>
         {reason && (
@@ -96,9 +101,13 @@ export function PhaseHeader({
   batch?: string
   action?: ReactNode
 }) {
+  const { t, m, ago } = useI18n()
+  const { active: replaying, realTime } = useReplayView()
   const state = phase ? phaseState(snapshot, phase, batch) : undefined
   const running = state?.status === "running"
-  const now = useNow(running)
+  const liveNow = useNow(running && !replaying)
+  const now = realTime ?? liveNow
+  const took = duration((state?.finishedAt ?? 0) - (state?.startedAt ?? 0))
   return (
     <div className="flex flex-wrap items-start gap-4">
       <div className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
@@ -112,14 +121,16 @@ export function PhaseHeader({
         {state && state.status !== "idle" && (
           <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
             <StatusIcon status={state.status} className="size-4" />
-            {state.status === "running" && <span className="shimmer-text">Working · {duration(now - (state.startedAt ?? now))}</span>}
+            {state.status === "running" && (
+              <span className="shimmer-text">{t("status.working", { elapsed: duration(Math.max(0, now - (state.startedAt ?? now))) })}</span>
+            )}
             {state.status === "done" && (
-              <span className="text-slate-400">
-                Completed {ago(state.finishedAt)} · took {duration((state.finishedAt ?? 0) - (state.startedAt ?? 0))}
-              </span>
+              <span className="text-slate-400">{replaying ? took : t("status.completed", { ago: ago(state.finishedAt), duration: took })}</span>
             )}
             {state.status === "failed" && <span className="text-rose-300">{state.error}</span>}
-            {state.note && state.status !== "running" && <Badge tone={state.status === "failed" ? "rose" : "slate"}>{state.note}</Badge>}
+            {state.note && state.status !== "running" && (
+              <Badge tone={state.status === "failed" ? "rose" : "slate"}>{m(state.noteMessage, state.note)}</Badge>
+            )}
           </div>
         )}
       </div>
@@ -129,6 +140,7 @@ export function PhaseHeader({
 }
 
 export function Working({ activity, phaseKey, title }: { activity: Activity[]; phaseKey: string; title: string }) {
+  const { m } = useI18n()
   const recent = activity.filter((a) => a.phase === phaseKey && a.kind !== "system").slice(-4)
   return (
     <div className="flex flex-col items-center gap-7 py-14">
@@ -136,10 +148,10 @@ export function Working({ activity, phaseKey, title }: { activity: Activity[]; p
         {[0, 1, 2].map((i) => (
           <motion.span
             key={i}
-            className="absolute inset-0 rounded-full ring-1 ring-cyan-400/40"
-            initial={{ scale: 0.25, opacity: 0.9 }}
-            animate={{ scale: 1, opacity: 0 }}
-            transition={{ duration: 2.6, repeat: Number.POSITIVE_INFINITY, delay: i * 0.85, ease: "easeOut" }}
+            className="absolute inset-0 rounded-full ring-1 ring-cyan-400/30"
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: [0.4, 0.75, 1], opacity: [0, 0.45, 0] }}
+            transition={{ duration: 5.4, repeat: Number.POSITIVE_INFINITY, delay: i * 1.8, ease: "easeInOut", times: [0, 0.45, 1] }}
           />
         ))}
         <motion.div
@@ -166,7 +178,7 @@ export function Working({ activity, phaseKey, title }: { activity: Activity[]; p
               exit={{ opacity: 0, y: -14 }}
               className="max-w-full truncate font-mono text-xs text-slate-500"
             >
-              {a.title}
+              {m(a.message, a.title)}
             </motion.div>
           ))}
         </AnimatePresence>

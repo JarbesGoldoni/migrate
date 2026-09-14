@@ -18,6 +18,7 @@ import { animate, motion, useMotionValue, useTransform } from "motion/react"
 import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, useEffect, useId, useState } from "react"
 import type { PhaseStatus } from "../../../src/shared/types"
 import { cn, methodStyle } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 
 const BUTTON_VARIANTS = {
   primary:
@@ -117,7 +118,7 @@ export function StatusIcon({ status, className }: { status: PhaseStatus; classNa
     return (
       <span className={cn("relative grid size-5 place-items-center", className)}>
         <span className="absolute inset-0 animate-ping-slow rounded-full bg-cyan-400/30" />
-        <LoaderCircle className="size-5 animate-spin text-cyan-300" />
+        <LoaderCircle className="size-full animate-spin text-cyan-300" />
       </span>
     )
   }
@@ -165,10 +166,11 @@ export function MethodBadge({ method, kind = "http", className }: { method?: str
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false)
+  const { t } = useI18n()
   return (
     <button
       type="button"
-      title="Copy"
+      title={t("common.copy")}
       onClick={(e) => {
         e.stopPropagation()
         void navigator.clipboard?.writeText(text)

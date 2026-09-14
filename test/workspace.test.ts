@@ -106,7 +106,7 @@ describe("Store", () => {
       batches: [{ id: "catalog", entrypoints: ["list"] }],
     })
     await writeJson(join(workspace, artifacts.environment), { services: [{ name: "legacy" }] })
-    for (const name of ["rules", "tests", "legacy-run", "port", "build", "parity", "reconcile"] as const) {
+    for (const name of ["rules", "tests", "legacy-run", "port", "build", "parity", "reconcile", "verify"] as const) {
       await writeJson(join(workspace, artifacts.batch("catalog", name)), name === "tests" ? { cases: [{ request: { path: "/p" } }] } : { batch: "catalog" })
     }
     const snapshot = await store.snapshot(project, state)
@@ -120,6 +120,7 @@ describe("Store", () => {
     expect(snapshot.builds.catalog).toBeDefined()
     expect(snapshot.parity.catalog).toBeDefined()
     expect(snapshot.reconcile.catalog.batch).toBe("catalog")
+    expect(snapshot.verify.catalog).toEqual({ batch: "catalog", fixes: [], notes: [] })
 
     expect(await store.loadActivity({ ...project, workspace: join(dir, "nowhere") })).toEqual([])
     await writeJson(join(workspace, artifacts.activity), [

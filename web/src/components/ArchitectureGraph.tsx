@@ -1,19 +1,11 @@
-import {
-  Background,
-  Controls,
-  type Edge,
-  Handle,
-  MarkerType,
-  type Node,
-  type NodeProps,
-  Position,
-  ReactFlow,
-} from "@xyflow/react"
+import { Background, Controls, type Edge, Handle, MarkerType, type Node, type NodeProps, Position, ReactFlow } from "@xyflow/react"
 import type { ELK as ElkInstance } from "elkjs/lib/elk-api"
 import { motion } from "motion/react"
 import { useEffect, useMemo, useState } from "react"
 import type { ArchitectureNode, Discovery } from "../../../src/shared/contracts"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
+import type { Key } from "../lib/i18n-core"
 import { NODE_KINDS } from "../lib/tech"
 import { TechIcon } from "./brand"
 
@@ -31,8 +23,10 @@ type ArchData = { node: ArchitectureNode; index: number }
 type ArchNodeType = Node<ArchData, "arch">
 
 const EDGE_COLORS = { sync: "#7c86a3", async: "#a78bfa", data: "#f5a524" }
+const EDGE_LABELS: Record<keyof typeof EDGE_COLORS, Key> = { sync: "graph.request", async: "graph.async", data: "graph.data" }
 
 function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
+  const { t } = useI18n()
   const meta = NODE_KINDS[data.node.kind] ?? NODE_KINDS.module
   const Kind = meta.icon
   return (
@@ -63,7 +57,7 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
           <div className="truncate text-[13px] font-semibold text-white">{data.node.label}</div>
           <div className="flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase" style={{ color: meta.color }}>
             <Kind className="size-3" />
-            {meta.label}
+            {t(`kind.${data.node.kind}` as Key)}
             {data.node.tech && <span className="truncate tracking-normal text-slate-500 normal-case">· {data.node.tech}</span>}
           </div>
         </div>
@@ -75,6 +69,13 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
 
 const nodeTypes = { arch: ArchNodeCard }
 
+const LABEL_MAX = 34
+
+const edgeLabel = (label: string) => (label.length > LABEL_MAX ? `${label.slice(0, LABEL_MAX - 1)}…` : label)
+
+// Rough rendered size of an edge label (10px font plus its background padding).
+const labelWidth = (label: string) => Math.ceil(label.length * 6.2) + 16
+
 async function layout(discovery: Discovery) {
   const elk = await loadElk()
   const result = await elk.layout({
@@ -82,13 +83,20 @@ async function layout(discovery: Discovery) {
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.spacing.nodeNode": "36",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "96",
+      "elk.spacing.nodeNode": "40",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "72",
+      "elk.spacing.edgeLabel": "8",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
     },
     children: discovery.nodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
-    edges: discovery.edges.map((e) => ({ id: e.id, sources: [e.from], targets: [e.to] })),
+    // Sized labels make the layout widen the gap between layers so labels never sit under a node.
+    edges: discovery.edges.map((e) => ({
+      id: e.id,
+      sources: [e.from],
+      targets: [e.to],
+      labels: e.label ? [{ text: edgeLabel(e.label), width: labelWidth(edgeLabel(e.label)), height: 18 }] : [],
+    })),
   })
   return new Map((result.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]))
 }
@@ -99,6 +107,7 @@ function gridFallback(discovery: Discovery) {
 }
 
 export function ArchitectureGraph({ discovery, className }: { discovery: Discovery; className?: string }) {
+  const { t } = useI18n()
   const [positions, setPositions] = useState<Map<string, { x: number; y: number }>>()
 
   useEffect(() => {
@@ -132,7 +141,10 @@ export function ArchitectureGraph({ discovery, className }: { discovery: Discove
           id: edge.id,
           source: edge.from,
           target: edge.to,
-          label: edge.label || undefined,
+          label: edge.label ? edgeLabel(edge.label) : undefined,
+          labelStyle: { fontSize: 10 },
+          // Above the nodes, so a label on a short edge is never hidden behind a card.
+          zIndex: 1,
           animated: edge.kind !== "sync",
           style: { stroke: color, strokeWidth: 1.6, strokeDasharray: edge.kind === "data" ? "6 5" : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
@@ -164,10 +176,10 @@ export function ArchitectureGraph({ discovery, className }: { discovery: Discove
         </ReactFlow>
       )}
       <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap gap-3 rounded-xl bg-ink-950/70 px-3 py-2 text-[10px] text-slate-400 ring-1 ring-white/5 backdrop-blur">
-        {Object.entries(EDGE_COLORS).map(([kind, color]) => (
+        {(Object.keys(EDGE_COLORS) as Array<keyof typeof EDGE_COLORS>).map((kind) => (
           <span key={kind} className="flex items-center gap-1.5">
-            <span className="h-0.5 w-4 rounded" style={{ background: color }} />
-            {kind === "sync" ? "request" : kind === "async" ? "async" : "data"}
+            <span className="h-0.5 w-4 rounded" style={{ background: EDGE_COLORS[kind] }} />
+            {t(EDGE_LABELS[kind])}
           </span>
         ))}
       </div>

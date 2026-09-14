@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { ModelOption, ModelRef } from "../../../src/shared/types"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
 
 export function ModelPicker({
   models,
@@ -17,6 +18,7 @@ export function ModelPicker({
   className?: string
   compact?: boolean
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const root = useRef<HTMLDivElement>(null)
@@ -57,7 +59,7 @@ export function ModelPicker({
               <span className="text-slate-500"> · {selected.providerName}</span>
             </>
           ) : (
-            <span className="text-slate-400">Choose a model</span>
+            <span className="text-slate-400">{t("model.choose")}</span>
           )}
         </span>
         <ChevronDown className={cn("size-4 text-slate-500 transition", open && "rotate-180")} />
@@ -77,12 +79,12 @@ export function ModelPicker({
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search models"
+                placeholder={t("model.search")}
                 className="h-10 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
               />
             </div>
             <div className="max-h-80 overflow-y-auto p-1.5">
-              {groups.length === 0 && <div className="px-3 py-6 text-center text-xs text-slate-500">No models match</div>}
+              {groups.length === 0 && <div className="px-3 py-6 text-center text-xs text-slate-500">{t("model.none")}</div>}
               {groups.map(([provider, items]) => (
                 <div key={provider} className="mb-1">
                   <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">{provider}</div>

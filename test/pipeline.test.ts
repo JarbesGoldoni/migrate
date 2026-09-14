@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test"
-import { existsSync } from "node:fs"
+import { existsSync, writeFileSync } from "node:fs"
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { EventBus } from "../src/server/bus"
@@ -21,6 +21,7 @@ function fakeShop(port: number, variant: "legacy" | "v2") {
       const url = new URL(request.url)
       if (url.pathname === "/health") return Response.json({ status: "ok" })
       if (url.pathname === "/api/products") return Response.json({ items: [{ sku: "KEY-001" }, { sku: "MOU-002" }], count: 2 })
+      if (url.pathname === "/api/products/KEY-001") return Response.json({ sku: "KEY-001" })
       if (url.pathname === "/api/products/NOPE") {
         return Response.json({ error: variant === "legacy" ? "product_not_found" : "not_found" }, { status: 404 })
       }
@@ -117,16 +118,36 @@ describe("Pipeline", () => {
           { id: "list", title: "List products", request: { method: "GET", path: "/api/products" }, expect: { status: 200, body: { count: 2 }, match: "subset" } },
           { id: "missing", title: "Unknown product", request: { method: "GET", path: "/api/products/NOPE" }, expect: { status: 404, body: { error: "product_not_found" }, match: "exact" } },
           { id: "wrong", title: "Wrong prediction", request: { method: "GET", path: "/api/products" }, expect: { status: 201 } },
+          // Takes the sku from the first case's response.
+          { id: "first", title: "First product", request: { method: "GET", path: "/api/products/{{list.$.items[0].sku}}" }, expect: { status: 200, body: { sku: "KEY-001" }, match: "exact" } },
         ],
       }),
     })
     expect((await pipeline.start(project.id, "port", "catalog")).reason).toBe("Run the tests against legacy before building v2")
+    expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Write the characterization tests first")
     await pipeline.start(project.id, "tests", "catalog")
     snapshot = await waitPhase(pipeline, project.id, "tests:catalog")
-    expect(snapshot.tests.catalog.cases).toHaveLength(3)
+    expect(snapshot.tests.catalog.cases).toHaveLength(4)
     expect(existsSync(join(project.workspace, artifacts.curl("catalog"), "list.sh"))).toBe(true)
-    expect(snapshot.state.phases["legacy:catalog"]).toMatchObject({ status: "done", note: "2/3 responses matched the predicted behavior" })
-    expect(snapshot.legacyRuns.catalog.results.map((r) => r.response.status)).toEqual([200, 404, 200])
+    expect(snapshot.state.phases["legacy:catalog"]).toMatchObject({ status: "done", note: "3/4 responses matched the predicted behavior" })
+    expect(snapshot.legacyRuns.catalog.results.map((r) => r.response.status)).toEqual([200, 404, 200, 200])
+
+    // Fix / validate: the agent adapts the wrong prediction, then legacy is replayed right away.
+    engine.outputs.verify = (options) => {
+      expect(options.prompt).toContain("### wrong")
+      expect(options.prompt).not.toContain("### list")
+      const tests = snapshot.tests.catalog
+      writeFileSync(
+        join(project.workspace, artifacts.batch("catalog", "tests")),
+        JSON.stringify({ ...tests, cases: tests.cases.map((c) => (c.id === "wrong" ? { ...c, expect: { status: 200, body: null, match: "status" } } : c)) }),
+      )
+      return { path: artifacts.batch("catalog", "verify"), data: { batch: "catalog", fixes: [{ case: "wrong", cause: "prediction", action: "expectation", change: "expects 200" }] } }
+    }
+    await pipeline.start(project.id, "verify", "catalog")
+    snapshot = await waitPhase(pipeline, project.id, "verify:catalog")
+    expect(snapshot.verify.catalog.fixes[0]).toMatchObject({ case: "wrong", action: "expectation" })
+    expect(snapshot.state.phases["legacy:catalog"].note).toBe("4/4 responses matched the predicted behavior")
+    expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Every legacy response already matches the prediction")
 
     engine.outputs.port = () => ({ path: artifacts.batch("catalog", "port"), data: { batch: "catalog", files: [{ path: "v2/main.go" }] } })
     await pipeline.start(project.id, "port", "catalog")
@@ -139,19 +160,20 @@ describe("Pipeline", () => {
     fakeShop(project.ports.v2, "v2")
     await pipeline.start(project.id, "parity", "catalog")
     snapshot = await waitPhase(pipeline, project.id, "parity:catalog")
-    expect(snapshot.parity.catalog).toMatchObject({ matched: 2, total: 3 })
-    expect(snapshot.state.phases["parity:catalog"].note).toBe("2/3 responses identical")
-    expect(snapshot.state.phases["parity:catalog"].noteMessage).toEqual({ key: "note.parity", params: { matched: 2, total: 3 } })
-    expect(snapshot.state.phases["legacy:catalog"].noteMessage).toEqual({ key: "note.legacyMatched", params: { agreed: 2, total: 3 } })
+    expect(snapshot.parity.catalog).toMatchObject({ matched: 3, total: 4 })
+    expect(snapshot.parity.catalog.results.find((r) => r.caseId === "first")?.v2.status).toBe(200)
+    expect(snapshot.state.phases["parity:catalog"].note).toBe("3/4 responses identical")
+    expect(snapshot.state.phases["parity:catalog"].noteMessage).toEqual({ key: "note.parity", params: { matched: 3, total: 4 } })
+    expect(snapshot.state.phases["legacy:catalog"].noteMessage).toEqual({ key: "note.legacyMatched", params: { agreed: 4, total: 4 } })
     expect(summarize(snapshot, false)).toMatchObject({
       steps: 8,
       batches: 1,
       batchesProven: 0,
       entrypoints: 2,
       rules: 1,
-      cases: 3,
-      matched: 2,
-      compared: 3,
+      cases: 4,
+      matched: 3,
+      compared: 4,
       running: false,
     })
     expect(summarize(undefined, true)).toMatchObject({ missing: true, steps: 0 })

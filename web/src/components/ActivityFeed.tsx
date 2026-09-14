@@ -20,6 +20,8 @@ import { AnimatePresence, motion } from "motion/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { Activity, ActivityKind } from "../../../src/shared/types"
 import { cn } from "../lib/format"
+import { useI18n } from "../lib/i18n"
+import { isKey } from "../lib/i18n-core"
 import { ACTIVITY_TONE } from "../lib/tech"
 
 const ICONS: Record<ActivityKind, LucideIcon> = {
@@ -39,29 +41,19 @@ const ICONS: Record<ActivityKind, LucideIcon> = {
   error: TriangleAlert,
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  discover: "architecture",
-  entrypoints: "entry points",
-  environment: "runtime",
-  rules: "rules",
-  tests: "tests",
-  legacy: "legacy run",
-  port: "port",
-  parity: "parity",
-  reconcile: "reconcile",
-}
-
-export function phaseLabel(key: string) {
-  const [phase, batch] = key.split(":")
-  return `${PHASE_LABEL[phase] ?? phase}${batch ? ` · ${batch}` : ""}`
-}
-
 export function ActivityFeed({ items, className }: { items: Activity[]; className?: string }) {
+  const { t, m } = useI18n()
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const [expanded, setExpanded] = useState<string>()
   const visible = useMemo(() => items.slice(-250), [items])
   const running = items.some((a) => a.status === "running")
+
+  const phaseLabel = (key: string) => {
+    const [phase, batch] = key.split(":")
+    const name = `phase.${phase}`
+    return `${isKey(name) ? t(name) : phase}${batch ? ` · ${batch}` : ""}`
+  }
 
   useEffect(() => {
     const el = scroller.current
@@ -76,9 +68,9 @@ export function ActivityFeed({ items, className }: { items: Activity[]; classNam
           <Sparkles className="relative size-4 text-violet-300" />
         </div>
         <div className="flex-1">
-          <div className="text-sm font-semibold text-white">Agent activity</div>
+          <div className="text-sm font-semibold text-white">{t("feed.title")}</div>
           <div className="text-[11px] text-slate-500">
-            {running ? <span className="shimmer-text">working…</span> : `${items.length} events`}
+            {running ? <span className="shimmer-text">{t("feed.working")}</span> : t("feed.events", { count: items.length })}
           </div>
         </div>
       </div>
@@ -93,7 +85,7 @@ export function ActivityFeed({ items, className }: { items: Activity[]; classNam
         {visible.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-slate-500">
             <Bot className="size-6 text-slate-600" />
-            Everything the agent reads, searches, writes and runs shows up here, live.
+            {t("feed.empty")}
           </div>
         )}
         <ul className="flex flex-col gap-0.5">
@@ -127,7 +119,7 @@ export function ActivityFeed({ items, className }: { items: Activity[]; classNam
                           ["read", "write", "edit", "list", "search", "bash"].includes(item.kind) && "font-mono text-[11.5px]",
                         )}
                       >
-                        {item.title}
+                        {m(item.message, item.title)}
                       </div>
                       <div className="mt-0.5 text-[10px] tracking-wide text-slate-600 uppercase">{phaseLabel(item.phase)}</div>
                       <AnimatePresence>
