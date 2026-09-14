@@ -26,11 +26,13 @@ export function targetOptions(discovery: Discovery | undefined): TargetOption[] 
     stacks: [],
     ai: false,
   })
-  const current = (discovery?.stack.languages ?? []).map(normalizeLanguage).find((id) => id && id !== "go" && id !== "elixir")
+  // The first language is the main one; a frontend language listed after it is not what gets migrated.
+  const current = normalizeLanguage(discovery?.stack.languages[0])
+  const upgrade = current && current !== "go" && current !== "elixir" && current !== "erlang" ? current : undefined
   return [
     pick("finops", "go", "target.fallback.finops"),
     pick("scale", "elixir", "target.fallback.scale"),
-    current ? pick("upgrade", current, "target.fallback.upgrade") : pick("fit", "typescript", "target.fallback.fit"),
+    upgrade ? pick("upgrade", upgrade, "target.fallback.upgrade") : pick("scale", "erlang", "target.fallback.erlang"),
   ]
 }
 

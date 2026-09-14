@@ -200,8 +200,9 @@ describe("target choice", () => {
     expect(targetOptions(undefined).map((o) => [o.kind, o.language, o.ai])).toEqual([
       ["finops", "go", false],
       ["scale", "elixir", false],
-      ["fit", "typescript", false],
+      ["scale", "erlang", false],
     ])
+    expect(targetOptions(parseDiscovery({ stack: { languages: ["go", "typescript"] } }))[2].language).toBe("erlang")
     expect(targetOptions(parseDiscovery({ stack: { languages: ["Java"] } }))[2]).toMatchObject({ kind: "upgrade", language: "java", version: "21" })
     const suggested = parseDiscovery({ recommendations: [{ kind: "finops", language: "go", stacks: [{ id: "chi" }] }] })
     expect(targetOptions(suggested)).toEqual([expect.objectContaining({ language: "go", ai: true })])

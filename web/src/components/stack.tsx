@@ -77,7 +77,7 @@ export function StackLabel({ project, className }: { project: ProjectRecord; cla
       <button
         type="button"
         onClick={() => navigate(`/m/${project.id}/target`)}
-        className={cn("flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-200", className)}
+        className={cn("flex cursor-pointer items-center gap-1.5 text-xs whitespace-nowrap text-slate-500 hover:text-cyan-200", className)}
       >
         {t("project.to")} <span className="rounded-md border border-dashed border-white/15 px-1.5 py-0.5">{t("target.none")}</span>
       </button>
@@ -88,7 +88,7 @@ export function StackLabel({ project, className }: { project: ProjectRecord; cla
     <button
       type="button"
       onClick={() => navigate(`/m/${project.id}/target`)}
-      className={cn("flex cursor-pointer items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300", className)}
+      className={cn("flex cursor-pointer items-center gap-1.5 text-xs whitespace-nowrap text-slate-500 hover:text-slate-300", className)}
     >
       {t("project.to")} <TechIcon tech={language?.icon} size={14} />
       <span className="text-slate-300">{stackTitle(choice)}</span>

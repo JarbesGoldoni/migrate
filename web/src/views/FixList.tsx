@@ -112,7 +112,8 @@ function FixCard({ fix, index, title, method, projectId }: { fix: Fix; index: nu
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-3 grid gap-4 rounded-xl bg-black/30 p-4 ring-1 ring-white/[0.05] md:grid-cols-2">
-              {l(fix.cause) && (
+              {/* Older results have no headline, so their cause is already the headline. */}
+              {l(fix.headline) && l(fix.cause) && (
                 <div>
                   <Label>{t("fix.why")}</Label>
                   <div className="text-sm text-slate-300">

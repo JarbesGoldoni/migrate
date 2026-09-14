@@ -285,7 +285,7 @@ function TopBar({
             <>
               <EffortPicker
                 compact
-                className="hidden w-36 2xl:block"
+                className="hidden w-44 2xl:block"
                 variants={modelOption?.variants}
                 value={model?.variant}
                 onChange={(variant) =>

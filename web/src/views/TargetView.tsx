@@ -214,7 +214,8 @@ export function TargetView({ snapshot }: { snapshot: Snapshot }) {
       </AnimatePresence>
 
       {choice && language && !replaying && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="sticky bottom-4 z-20">
+        // Floats over the page only while there is something to confirm.
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={cn(!locked && (dirty || findsEntrypoints) && "sticky bottom-4 z-20")}>
           <Panel className="flex flex-wrap items-center gap-4 bg-ink-900/85 p-4 shadow-2xl ring-1 shadow-black/50 ring-cyan-400/20 backdrop-blur-xl">
             <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-cyan-400/10 ring-1 ring-cyan-400/25">
               <TechIcon tech={language.icon} size={24} />
