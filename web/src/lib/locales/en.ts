@@ -587,6 +587,12 @@ export const en = {
   "server.agentStopped": "The agent stopped: {detail}",
   "server.unknownBatch": "Unknown batch {detail}",
   "server.unknownMigration": "This migration no longer exists ({detail})",
+  "new.step1": "Application",
+  "new.step2": "Check and start",
+  "new.change": "Change folder",
+  "new.checking": "Checking your machine and the project",
+  "new.blocked": "{count} required checks need attention before starting",
+  "new.readyToStart": "{project} is ready to migrate",
 } as const
 
 export type Key = keyof typeof en

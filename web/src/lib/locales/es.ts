@@ -589,4 +589,10 @@ export const es: Record<Key, string> = {
   "server.agentStopped": "El agente se detuvo: {detail}",
   "server.unknownBatch": "Lote desconocido {detail}",
   "server.unknownMigration": "Esta migración ya no existe ({detail})",
+  "new.step1": "Aplicación",
+  "new.step2": "Verificar e iniciar",
+  "new.change": "Cambiar carpeta",
+  "new.checking": "Verificando tu máquina y el proyecto",
+  "new.blocked": "{count} comprobaciones obligatorias necesitan atención antes de empezar",
+  "new.readyToStart": "{project} está listo para migrar",
 }

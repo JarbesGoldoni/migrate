@@ -589,4 +589,10 @@ export const ptBR: Record<Key, string> = {
   "server.agentStopped": "O agente parou: {detail}",
   "server.unknownBatch": "Lote desconhecido {detail}",
   "server.unknownMigration": "Esta migração não existe mais ({detail})",
+  "new.step1": "Aplicação",
+  "new.step2": "Verificar e iniciar",
+  "new.change": "Trocar pasta",
+  "new.checking": "Verificando sua máquina e o projeto",
+  "new.blocked": "{count} verificações obrigatórias precisam de atenção antes de iniciar",
+  "new.readyToStart": "{project} está pronto para migrar",
 }
