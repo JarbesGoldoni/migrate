@@ -18,13 +18,19 @@ Migrate is that method, running on its own. Point it at an application and it ma
 | 2 | **Find every entry point** | Routes, jobs and consumers with file and line, grouped into coherent batches you dispatch one at a time |
 | 3 | **Containerize legacy** | Legacy running in containers with throwaway databases and mocks for third-party APIs |
 | 4 | **Extract the business rules** | Each entry point traced end to end: the call chain, and every rule as a decision table next to its source |
-| 5 | **Characterize** | Executable curls — real requests in, expected responses out — one per branch, replayed against legacy first |
+| 5 | **Characterize** | Executable curls — real requests in, expected responses out — one per branch, replayed against legacy first. **Fix / validate** sends the cases legacy disagreed with back to the agent once, which adapts them (removing one only as a last resort) and replays legacy |
 | 6 | **Port** | The batch rewritten in Go: rules as pure functions, one handler factory for HTTP, unit tests, a Dockerfile |
 | 7 | **Prove parity** | Both systems reset to the same seeded state, every request sent to each, responses diffed field by field |
 | 8 | **Reconcile** | One click sends the divergences back to the agent, which fixes v2 against the legacy code and parity re-runs |
 | 9 | **Roll out** | An illustration of the 1% → 100% phased rollout that takes a proven batch to production |
 
 Every step runs **once, straight through** — no review loops, no automatic retries. If a step fails you press *Run again*.
+
+## Show it to someone
+
+- **Three languages.** The whole app speaks English, Brazilian Portuguese and Spanish — switch any time from the header. A migration started in a language also gets its rules, test titles and notes written in it.
+- **Replay.** When a migration is done, press **Replay** and it plays back from the first step: the graph appearing, the agent's activity, tests hitting legacy, parity filling up — hours compressed into minutes, with play, pause, seek and 1×/2×/4×.
+- **Your migrations.** Every migration you run is kept on your machine under *Your migrations* (`#/migrations`), with its progress and numbers, ready to open or replay.
 
 ## Quick start
 
@@ -79,6 +85,7 @@ migration/
     tests.json              characterization cases
     curl/*.sh               the same cases as runnable curl scripts
     legacy-run.json         what legacy actually answered
+    verify.json             how tests legacy disagreed with were adapted
     port.json               routes, files, rule → function mapping
     build.json              build, test and container results
     parity.json             legacy vs v2, request by request
@@ -92,6 +99,7 @@ That `migration/` folder is the executable specification of the system's behavio
 - **Contracts, not conversations.** Each step asks the agent for one JSON document with a fixed shape. Parsing is tolerant: a missing or malformed field falls back to a default instead of failing the step. The documents are also the hand-off between steps, so later steps don't re-explore the code.
 - **Deterministic work stays in code.** Curl scripts, container builds, the legacy replay, parity runs and diffs are done by the app, not the model — they cost no tokens and give the same answer every time.
 - **Legacy is the source of truth.** Tests are replayed against legacy before any v2 code exists. Where legacy disagrees with what the code seemed to say, legacy wins, and v2 is compared against legacy's real responses.
+- **Cases can chain.** A request can reuse what an earlier case returned — `Authorization: Bearer {{login-admin.$.data.token}}`, `/users/{{create-user.$.data.id}}` — and each system resolves it from its own responses.
 - **Isolated, identical state.** Legacy and v2 each get their own copy of every dependency, seeded the same way and reset before each run, so both sides see the same world.
 
 ## Development
