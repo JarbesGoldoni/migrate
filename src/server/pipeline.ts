@@ -258,8 +258,17 @@ export class Pipeline {
       note: undefined,
       noteMessage: undefined,
     })
+    // Save the history and release the phase before announcing the result, so whoever
+    // reacts to "done" or "failed" finds both in place.
+    const settle = async () => {
+      parent?.removeEventListener("abort", onParentAbort)
+      this.controllers.delete(`${project.id}:${key}`)
+      const items = this.deps.bus.activity(project.id).filter((a) => a.phase === key && a.at >= startedAt)
+      await this.deps.store.saveActivity(project, key, items).catch(() => {})
+    }
     try {
       const note = await this.execute(project, definition, batchId, controller.signal)
+      await settle()
       await this.setPhase(project, key, { status: "done", finishedAt: Date.now(), note: note?.text, noteMessage: note?.message })
     } catch (error) {
       const reason = controller.signal.aborted ? "Stopped" : error instanceof Error ? error.message : String(error)
@@ -269,13 +278,9 @@ export class Pipeline {
         message: msg("activity.phaseFailed", { phase: definition.name }),
         detail: reason,
       })
+      await settle()
       await this.setPhase(project, key, { status: "failed", finishedAt: Date.now(), error: reason })
       throw error
-    } finally {
-      parent?.removeEventListener("abort", onParentAbort)
-      this.controllers.delete(`${project.id}:${key}`)
-      const items = this.deps.bus.activity(project.id).filter((a) => a.phase === key && a.at >= startedAt)
-      await this.deps.store.saveActivity(project, key, items).catch(() => {})
     }
   }
 
