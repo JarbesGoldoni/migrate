@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
-import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
-import { basename, join } from "node:path"
+import { existsSync, statSync } from "node:fs"
+import { readFile, rm } from "node:fs/promises"
+import { basename, join, resolve, sep } from "node:path"
 import type { Batch } from "../shared/contracts"
 import { type Message, msg } from "../shared/messages"
 import {
@@ -130,9 +130,59 @@ export class Pipeline {
     return Promise.all(
       records.map(async (project) => {
         const missing = !existsSync(project.workspace)
-        return { project, summary: summarize(missing ? undefined : await this.snapshot(project.id), missing) }
+        const summary = summarize(missing ? undefined : await this.snapshot(project.id), missing)
+        return { project, summary: { ...summary, linked: isLinkedWorktree(project.workspace) } }
       }),
     )
+  }
+
+  /** Remove a migration: its containers, its workspace and, when asked, its branch in the original repository. */
+  async deleteProject(id: string, options: { branch?: boolean } = {}) {
+    const project = await this.project(id)
+    await this.assertIdle(project)
+    const composer = await this.composer(project).catch(() => undefined)
+    if (composer) await composer.down({ volumes: true }).catch(() => undefined)
+    const linked = isLinkedWorktree(project.workspace)
+    if (linked) {
+      await this.deps.exec("git", ["worktree", "remove", "--force", project.workspace], { cwd: project.source })
+      if (options.branch) await this.deps.exec("git", ["branch", "-D", project.branch], { cwd: project.source })
+    }
+    // Only ever delete folders this app created.
+    const root = resolve(this.deps.workspaces ?? workspacesDir())
+    if (resolve(project.workspace).startsWith(root + sep)) await rm(project.workspace, { recursive: true, force: true })
+    if (linked) await this.deps.exec("git", ["worktree", "prune"], { cwd: project.source })
+    await this.deps.store.remove(id)
+    this.states.delete(id)
+    return { deleted: true }
+  }
+
+  /** Copy the migration branch into the original repository, where it can be checked out and reviewed. */
+  async exportBranch(id: string, name?: string) {
+    const project = await this.project(id)
+    await this.assertIdle(project)
+    const probe = await probeProject(project.source, this.deps.exec)
+    if (!probe.isGit) throw new Error("The original folder is not a git repository. Run git init there, then try again.")
+    const branch = name?.trim() || exportBranchName(project)
+    const git = (args: string[], cwd = project.source) => this.deps.exec("git", args, { cwd, timeoutMs: 5 * 60_000 })
+    if ((await git(["check-ref-format", "--branch", branch])).code !== 0) throw new Error(`"${branch}" is not a valid branch name`)
+    const linked = isLinkedWorktree(project.workspace)
+    if (linked && branch === project.branch) throw new Error(`"${branch}" is the migration's working branch; pick another name`)
+    const current = (await git(["symbolic-ref", "--quiet", "--short", "HEAD"])).stdout.trim()
+    if (current === branch) throw new Error(`"${branch}" is checked out in your repository; pick another name`)
+    await this.commit(project, "migrate: save work in progress")
+    const commit = (await git(["rev-parse", "HEAD"], project.workspace)).stdout.trim()
+    const result = linked
+      ? await git(["branch", "--force", branch, commit])
+      : await git(["fetch", "--no-tags", project.workspace, `+refs/heads/${project.branch}:refs/heads/${branch}`])
+    if (result.code !== 0) throw new Error(`Could not create ${branch}: ${output(result).slice(0, 400)}`)
+    return { branch, commit, repository: project.source, command: `git checkout ${branch}` }
+  }
+
+  private async assertIdle(project: ProjectRecord) {
+    const state = await this.stateOf(project)
+    if (Object.values(state.phases).some((phase) => phase.status === "running")) {
+      throw new Error("A step is still running. Stop it or wait for it to finish.")
+    }
   }
 
   /** Start a phase in the background. Returns why it cannot start, if it cannot. */
@@ -250,7 +300,7 @@ export class Pipeline {
         tests: batchId ? snapshot.tests[batchId] : undefined,
         legacyRun: batchId ? snapshot.legacyRuns[batchId] : undefined,
       }
-      const title = `${definition.title}${batch ? ` · ${batch.title}` : ""}`
+      const title = `${definition.title}${batch ? ` · ${batch.title.en}` : ""}`
       this.activity(project, key, {
         kind: "system",
         title,
@@ -400,7 +450,7 @@ export class Pipeline {
           message: response.error
             ? msg("activity.requestNoResponse", { method, path })
             : msg("activity.request", { method, path, status: response.status }),
-          detail: testCase.title,
+          detail: testCase.title.en,
         })
       }
       return { batch: batchId, at: Date.now(), baseUrl, results }
@@ -517,7 +567,7 @@ export class Pipeline {
         this.activity(project, key, {
           id: `parity-${batchId}-${testCase.id}`,
           kind: comparison.match ? "success" : "error",
-          title: `${comparison.match ? "Identical" : "Different"} · ${testCase.title}`,
+          title: `${comparison.match ? "Identical" : "Different"} · ${testCase.title.en}`,
           message: msg(comparison.match ? "activity.parityIdentical" : "activity.parityDifferent", { title: testCase.title }),
         })
       }
@@ -631,7 +681,7 @@ export class Pipeline {
 
 /** Headline numbers for the migrations library. */
 export function summarize(snapshot: ProjectSnapshot | undefined, missing: boolean): MigrationSummary {
-  const empty = { missing, running: false, steps: 0, batches: 0, batchesProven: 0, entrypoints: 0, rules: 0, cases: 0, matched: 0, compared: 0 }
+  const empty = { missing, linked: false, running: false, steps: 0, batches: 0, batchesProven: 0, entrypoints: 0, rules: 0, cases: 0, matched: 0, compared: 0 }
   if (!snapshot) return empty
   const batches = snapshot.entrypoints?.batches ?? []
   const parity = Object.values(snapshot.parity)
@@ -686,6 +736,20 @@ export async function locateOutput(root: string, output: string, result: Pick<Ru
 
 function tail(text: string, max = 4000) {
   return text.length > max ? `…${text.slice(text.length - max)}` : text
+}
+
+/** A linked git worktree has a .git file pointing at its repository; a standalone repository has a .git folder. */
+export function isLinkedWorktree(workspace: string) {
+  try {
+    return statSync(join(workspace, ".git")).isFile()
+  } catch {
+    return false
+  }
+}
+
+/** migrate/v2 becomes simplify/v2, so the exported branch never collides with the working one. */
+export function exportBranchName(project: Pick<ProjectRecord, "branch">) {
+  return project.branch.replace(/^migrate\//, "simplify/")
 }
 
 export function targetLabel(project: ProjectRecord) {

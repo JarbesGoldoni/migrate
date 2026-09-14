@@ -1,8 +1,23 @@
-import { Background, Controls, type Edge, Handle, MarkerType, type Node, type NodeProps, Position, ReactFlow } from "@xyflow/react"
+import {
+  Background,
+  BaseEdge,
+  Controls,
+  type Edge,
+  EdgeLabelRenderer,
+  type EdgeProps,
+  getBezierPath,
+  Handle,
+  MarkerType,
+  type Node,
+  type NodeProps,
+  Position,
+  ReactFlow,
+  useInternalNode,
+} from "@xyflow/react"
 import type { ELK as ElkInstance } from "elkjs/lib/elk-api"
 import { motion } from "motion/react"
 import { useEffect, useMemo, useState } from "react"
-import type { ArchitectureNode, Discovery } from "../../../src/shared/contracts"
+import type { ArchitectureNode, Discovery, Localized } from "../../../src/shared/contracts"
 import { cn } from "../lib/format"
 import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
@@ -21,20 +36,23 @@ const loadElk = () => {
 
 type ArchData = { node: ArchitectureNode; index: number }
 type ArchNodeType = Node<ArchData, "arch">
+type ArchEdgeType = Edge<{ label?: Localized }, "arch">
 
 const EDGE_COLORS = { sync: "#7c86a3", async: "#a78bfa", data: "#f5a524" }
 const EDGE_LABELS: Record<keyof typeof EDGE_COLORS, Key> = { sync: "graph.request", async: "graph.async", data: "graph.data" }
 
+const LABEL_MAX = 34
+
+const shorten = (label: string) => (label.length > LABEL_MAX ? `${label.slice(0, LABEL_MAX - 1)}…` : label)
+
 function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const meta = NODE_KINDS[data.node.kind] ?? NODE_KINDS.module
   const Kind = meta.icon
-  // Handles live outside the animated card: React Flow measures them once, and measuring
-  // them mid-entrance (scaled down) would pin the edge ends inside the card.
   return (
     <div className="relative" style={{ width: NODE_W }}>
-      <Handle type="target" position={Position.Left} />
-      <Handle type="source" position={Position.Right} />
+      <Handle type="target" position={Position.Left} className="!opacity-0" />
+      <Handle type="source" position={Position.Right} className="!opacity-0" />
       <motion.div
         initial={{ opacity: 0, scale: 0.7, y: 16 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -43,7 +61,7 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
         className="group relative rounded-2xl p-3"
         style={{
           minHeight: NODE_H,
-          background: "linear-gradient(180deg, rgba(20,26,40,0.95), rgba(10,14,23,0.95))",
+          background: "linear-gradient(180deg, rgba(20,26,40,0.97), rgba(10,14,23,0.97))",
           boxShadow: `0 0 0 1px ${meta.color}33, 0 18px 50px -24px ${meta.color}88`,
         }}
       >
@@ -56,7 +74,7 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
             <TechIcon tech={data.node.tech} kind={data.node.kind} size={20} />
           </div>
           <div className="min-w-0 pr-3">
-            <div className="truncate text-[13px] font-semibold text-white">{data.node.label}</div>
+            <div className="truncate text-[13px] font-semibold text-white">{l(data.node.label)}</div>
             <div className="flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase" style={{ color: meta.color }}>
               <Kind className="size-3" />
               {t(`kind.${data.node.kind}` as Key)}
@@ -64,20 +82,54 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
             </div>
           </div>
         </div>
-        {data.node.description && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{data.node.description}</p>}
+        {l(data.node.description) && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{l(data.node.description)}</p>}
       </motion.div>
     </div>
   )
 }
 
+/**
+ * Edges run from border to border of the node boxes. Measured handle positions are not used:
+ * they are taken while a card is still scaling in and would pin the ends inside the card.
+ */
+function ArchEdge({ id, source, target, data, style, markerEnd }: EdgeProps<ArchEdgeType>) {
+  const { l } = useI18n()
+  const from = useInternalNode(source)
+  const to = useInternalNode(target)
+  if (!from || !to) return null
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX: from.internals.positionAbsolute.x + (from.measured.width ?? NODE_W),
+    sourceY: from.internals.positionAbsolute.y + (from.measured.height ?? NODE_H) / 2,
+    sourcePosition: Position.Right,
+    targetX: to.internals.positionAbsolute.x,
+    targetY: to.internals.positionAbsolute.y + (to.measured.height ?? NODE_H) / 2,
+    targetPosition: Position.Left,
+  })
+  const label = l(data?.label)
+  return (
+    <>
+      <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} />
+      {label && (
+        <EdgeLabelRenderer>
+          {/* Labels sit above the nodes; the lines stay below them. */}
+          <div
+            className="pointer-events-none absolute rounded-md bg-ink-900/95 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-slate-300 ring-1 ring-white/10"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, zIndex: 1000 }}
+          >
+            {shorten(label)}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
 const nodeTypes = { arch: ArchNodeCard }
+const edgeTypes = { arch: ArchEdge }
 
-const LABEL_MAX = 34
-
-const edgeLabel = (label: string) => (label.length > LABEL_MAX ? `${label.slice(0, LABEL_MAX - 1)}…` : label)
-
-// Rough rendered size of an edge label (10px font plus its background padding).
-const labelWidth = (label: string) => Math.ceil(label.length * 6.2) + 16
+// Rough rendered size of an edge label (10px font plus padding), sized for its longest translation.
+const labelWidth = (label: Localized) =>
+  Math.ceil(Math.max(...Object.values(label).map((text) => shorten(text).length)) * 6.2) + 16
 
 async function layout(discovery: Discovery) {
   const elk = await loadElk()
@@ -93,12 +145,12 @@ async function layout(discovery: Discovery) {
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
     },
     children: discovery.nodes.map((n) => ({ id: n.id, width: NODE_W, height: NODE_H })),
-    // Sized labels make the layout widen the gap between layers so labels never sit under a node.
+    // Sized labels make the layout widen the gap between layers so labels never sit on a node.
     edges: discovery.edges.map((e) => ({
       id: e.id,
       sources: [e.from],
       targets: [e.to],
-      labels: e.label ? [{ text: edgeLabel(e.label), width: labelWidth(edgeLabel(e.label)), height: 18 }] : [],
+      labels: e.label.en ? [{ text: e.label.en, width: labelWidth(e.label), height: 18 }] : [],
     })),
   })
   return new Map((result.children ?? []).map((c) => [c.id, { x: c.x ?? 0, y: c.y ?? 0 }]))
@@ -136,23 +188,19 @@ export function ArchitectureGraph({ discovery, className }: { discovery: Discove
     [discovery, positions],
   )
 
-  const edges = useMemo<Edge[]>(
+  const edges = useMemo<ArchEdgeType[]>(
     () =>
       discovery.edges.map((edge) => {
         const color = EDGE_COLORS[edge.kind]
         return {
           id: edge.id,
+          type: "arch",
           source: edge.from,
           target: edge.to,
-          label: edge.label ? edgeLabel(edge.label) : undefined,
-          labelStyle: { fontSize: 10 },
-          // Above the nodes, so a label on a short edge is never hidden behind a card.
-          zIndex: 1,
+          data: { label: edge.label },
           animated: edge.kind !== "sync",
           style: { stroke: color, strokeWidth: 1.6, strokeDasharray: edge.kind === "data" ? "6 5" : undefined },
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
-          labelBgPadding: [6, 3] as [number, number],
-          labelBgBorderRadius: 6,
         }
       }),
     [discovery],
@@ -165,6 +213,7 @@ export function ArchitectureGraph({ discovery, className }: { discovery: Discove
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           colorMode="dark"
           fitView
           fitViewOptions={{ padding: 0.18 }}

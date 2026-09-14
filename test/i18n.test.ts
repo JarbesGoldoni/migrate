@@ -7,6 +7,7 @@ import {
   formatDate,
   isKey,
   LOCALE_OPTIONS,
+  localize,
   relativeTime,
   translate,
 } from "../web/src/lib/i18n-core"
@@ -43,6 +44,15 @@ describe("translate", () => {
     expect(translate("pt-BR", "rules.count", { count: 3 })).toBe("3 regras")
     expect(translate("es", "batch.steps", { done: 1, total: 5 })).toBe("1 de 5 pasos")
     expect(translate("en", "rules.count")).toBe("{count} rules")
+  })
+
+  test("shows agent text in the viewer's language", () => {
+    const title = { en: "Login", "pt-BR": "Entrar", es: "" }
+    expect(localize("pt-BR", title)).toBe("Entrar")
+    expect(localize("es", title)).toBe("Login")
+    expect(localize("en", "plain")).toBe("plain")
+    expect(localize("en", undefined)).toBe("")
+    expect(describeMessage("pt-BR", { key: "activity.parityIdentical", params: { title } }, "x")).toContain("Entrar")
   })
 
   test("renders server messages, translating phase names", () => {

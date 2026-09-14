@@ -1,8 +1,9 @@
 import { useMemo } from "react"
 import { create } from "zustand"
+import type { Localized } from "../../../src/shared/contracts"
 import type { Message } from "../../../src/shared/messages"
 import type { Locale } from "../../../src/shared/types"
-import { describeMessage, detectLocale, formatDate, type Key, type Params, relativeTime, translate } from "./i18n-core"
+import { describeMessage, detectLocale, formatDate, type Key, localize, type Params, relativeTime, translate } from "./i18n-core"
 
 const STORAGE_KEY = "migrate.locale"
 
@@ -38,6 +39,7 @@ export function useI18n() {
       setLocale,
       t: (key: Key, params?: Params) => translate(locale, key, params),
       m: (message: Message | undefined, fallback: string) => describeMessage(locale, message, fallback),
+      l: (value: Localized | string | undefined) => localize(locale, value),
       ago: (at?: number) => relativeTime(locale, at),
       date: (at: number) => formatDate(locale, at),
     }),

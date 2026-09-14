@@ -17,7 +17,7 @@ import { PhaseAction, PhaseHeader, SectionTitle, Working } from "./common"
 type Service = NonNullable<Snapshot["environment"]>["services"][number]
 
 export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; activity: Activity[] }) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const { active: replaying } = useReplayView()
   const environment = snapshot.environment
   const running = phaseStatus(snapshot, "environment") === "running"
@@ -86,7 +86,7 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-white">{mock.dependency}</div>
-                      <div className="text-xs text-slate-400">{mock.approach}</div>
+                      <div className="text-xs text-slate-400">{l(mock.approach)}</div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {mock.files.map((file) => (
                           <span key={file} className="flex items-center gap-1 rounded bg-white/[0.04] px-1.5 font-mono text-[10px] text-slate-500">
@@ -105,9 +105,9 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
               <Panel className="flex flex-col gap-2 p-4">
                 {environment.limitations.length === 0 && <div className="text-sm text-slate-500">{t("env.noLimitations")}</div>}
                 {environment.limitations.map((item) => (
-                  <div key={item} className="flex gap-2 text-sm text-slate-300">
+                  <div key={item.en} className="flex gap-2 text-sm text-slate-300">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
-                    {item}
+                    {l(item)}
                   </div>
                 ))}
               </Panel>

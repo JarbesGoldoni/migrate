@@ -1,5 +1,5 @@
-import type { Batch, Discovery, EntryPoints } from "../shared/contracts"
-import type { LegacyRun, Locale, ParityRun, ProjectRecord } from "../shared/types"
+import type { Batch, Discovery, EntryPoints, Localized } from "../shared/contracts"
+import type { LegacyRun, ParityRun, ProjectRecord } from "../shared/types"
 import { artifacts } from "./store"
 
 export type PromptContext = {
@@ -21,9 +21,32 @@ const clipJson = (value: unknown, max = 1200) => {
   return s.length > max ? `${s.slice(0, max)}…` : s
 }
 
-export const TARGETS: Record<string, { label: string; architecture: string; verify: string; image: string }> = {
+/** Example text in the three languages the app shows. */
+const tr = (en: string, ptBR: string, es: string): Localized => ({ en, "pt-BR": ptBR, es })
+
+/** Literal text (a status line, a product name) reads the same in every language. */
+const same = (value: string) => tr(value, value, value)
+
+export type TargetStack = {
+  label: string
+  /** Relative cloud bill for the same traffic: 1 lowest (small binaries, low memory, fast cold starts). */
+  cost: 1 | 2 | 3
+  recommended?: boolean
+  image: string
+  verify: string
+  architecture: string
+}
+
+const PORTABLE = `- Business rules are pure functions with no HTTP or I/O awareness; each rule id from rules.json maps to one function, with the rule id in a one-line comment above it.
+- One transport adapter maps domain errors to the legacy status codes and writes the legacy response shape; routes stay one-liners.
+- Data access and external calls sit behind small interfaces.
+- The service reads the same configuration as legacy from environment variables and listens on port 8080.`
+
+export const TARGETS: Record<string, TargetStack> = {
   go: {
     label: "Go",
+    cost: 1,
+    recommended: true,
     image: "docker.io/library/golang:1.23-alpine",
     verify: "go build ./... && go test ./...",
     architecture: `- v2/ is a single Go module (module name "v2", go 1.23) using the standard library net/http router (Go 1.22+ patterns such as "POST /api/orders/{id}"). No web framework. Add dependencies only when a dependency needs a driver (pgx for PostgreSQL, go-redis for Redis).
@@ -34,8 +57,30 @@ export const TARGETS: Record<string, { label: string; architecture: string; veri
 - Table-driven unit tests next to the domain functions.
 - v2/Dockerfile: multi-stage (docker.io/library/golang:1.23-alpine builder, docker.io/library/alpine:3.20 runtime), build context v2/.`,
   },
+  rust: {
+    label: "Rust (Axum)",
+    cost: 1,
+    image: "docker.io/library/rust:1-slim",
+    verify: "cargo build && cargo test",
+    architecture: `- v2/ is a Cargo binary crate using axum, tokio and serde; sqlx or deadpool clients only where a dependency needs one.
+${PORTABLE}
+- Rules live in v2/src/domain/<area>.rs, one error enum implements IntoResponse in v2/src/http/error.rs, routes in v2/src/http/routes.rs, stores and clients in v2/src/store/ and v2/src/clients/.
+- Unit tests in #[cfg(test)] modules next to the domain functions.
+- v2/Dockerfile: multi-stage (docker.io/library/rust:1-slim builder, docker.io/library/debian:bookworm-slim runtime), build context v2/.`,
+  },
+  csharp: {
+    label: "C# (.NET minimal APIs)",
+    cost: 2,
+    image: "mcr.microsoft.com/dotnet/sdk:8.0",
+    verify: "dotnet build && dotnet test",
+    architecture: `- v2/ is an ASP.NET Core 8 minimal API solution: v2/src/Api (host and endpoints), v2/src/Domain (rules), v2/tests/Domain.Tests (xUnit).
+${PORTABLE}
+- Rules are static functions in v2/src/Domain/<Area>/, one exception-to-result mapping in v2/src/Api/Errors.cs, endpoints grouped per resource.
+- v2/Dockerfile: multi-stage (mcr.microsoft.com/dotnet/sdk:8.0 builder publishing ReadyToRun, mcr.microsoft.com/dotnet/aspnet:8.0 runtime), build context v2/.`,
+  },
   typescript: {
     label: "TypeScript (Bun + Hono)",
+    cost: 2,
     image: "docker.io/oven/bun:1",
     verify: "bun install && bun test",
     architecture: `- v2/ is a Bun + Hono TypeScript service listening on port 8080.
@@ -45,8 +90,31 @@ export const TARGETS: Record<string, { label: string; architecture: string; veri
 - Unit tests with bun test next to the domain functions.
 - v2/Dockerfile based on docker.io/oven/bun:1, build context v2/.`,
   },
+  kotlin: {
+    label: "Kotlin (Ktor)",
+    cost: 2,
+    image: "docker.io/library/gradle:8-jdk21",
+    verify: "gradle build --no-daemon",
+    architecture: `- v2/ is a Gradle (Kotlin DSL) Ktor 2 application with kotlinx.serialization.
+${PORTABLE}
+- Rules in v2/src/main/kotlin/domain/<area>/, one StatusPages configuration maps domain errors, routes per resource in v2/src/main/kotlin/http/.
+- JUnit 5 unit tests for the domain functions.
+- v2/Dockerfile: multi-stage (docker.io/library/gradle:8-jdk21 builder, docker.io/library/eclipse-temurin:21-jre runtime), build context v2/.`,
+  },
+  java: {
+    label: "Java (Spring Boot)",
+    cost: 3,
+    image: "docker.io/library/maven:3-eclipse-temurin-21",
+    verify: "mvn -q -B verify",
+    architecture: `- v2/ is a Maven Spring Boot 3 application (Java 21, spring-boot-starter-web).
+${PORTABLE}
+- Rules are plain classes in v2/src/main/java/v2/domain/<area>/, one @RestControllerAdvice maps domain errors, thin controllers per resource.
+- JUnit 5 unit tests for the domain classes.
+- v2/Dockerfile: multi-stage (docker.io/library/maven:3-eclipse-temurin-21 builder, docker.io/library/eclipse-temurin:21-jre runtime), build context v2/.`,
+  },
   python: {
     label: "Python (FastAPI)",
+    cost: 3,
     image: "docker.io/library/python:3.12-slim",
     verify: "python -m compileall -q .",
     architecture: `- v2/ is a FastAPI service served by uvicorn on port 8080.
@@ -57,8 +125,6 @@ export const TARGETS: Record<string, { label: string; architecture: string; veri
 - v2/Dockerfile based on docker.io/library/python:3.12-slim, build context v2/.`,
   },
 }
-
-const LANGUAGE_NAMES: Record<Locale, string> = { en: "English", "pt-BR": "Brazilian Portuguese", es: "Spanish" }
 
 export function targetOf(project: ProjectRecord) {
   return TARGETS[project.target] ?? TARGETS.go
@@ -80,13 +146,17 @@ Workspace layout:
 Rules of engagement:
 - Be efficient: locate code with glob and grep, read only what you need, do not narrate.
 - Never ask questions. Make reasonable assumptions and record them.
-- Write every human-readable text value (summaries, titles, descriptions, rationales, flow steps, decision rows, notes, limitations) in ${LANGUAGE_NAMES[ctx.project.language ?? "en"]}. Keep ids, JSON keys, file paths, code identifiers, HTTP methods and paths, and literal response values exactly as they are.
+- People read the results in English, Brazilian Portuguese or Spanish. Every human-readable text value in the JSON (summaries, names, titles, labels, descriptions, rationales, flow steps, decision rows, purposes, notes, limitations, causes, changes) is an object with the same meaning in all three: {"en": "...", "pt-BR": "...", "es": "..."}. Literal values inside such text (status codes, error codes, field names) stay unchanged in every language. Everything else is a plain string in English: ids, JSON keys, file paths, code, commands, technology names, HTTP methods, paths, headers and request or response bodies.
 - Commands that can block (container builds, "compose up", servers, installs) always get a timeout of at most 5 minutes; never start a foreground process that does not exit.
 - Finish by writing the JSON document to "${output}" (relative to the workspace root; absolute path ${root}/${output}) with the write tool. Valid JSON only: no comments, no trailing commas. Then reply with one short sentence.`
 }
 
 const DISCOVERY_EXAMPLE = {
-  summary: "Flask REST API for clinic appointments backed by MySQL, with RabbitMQ for reminders and an SMS provider.",
+  summary: tr(
+    "Flask REST API for clinic appointments backed by MySQL, with RabbitMQ for reminders and an SMS provider.",
+    "API REST em Flask para agendamentos de clínica, com MySQL, RabbitMQ para lembretes e um provedor de SMS.",
+    "API REST en Flask para citas de clínica con MySQL, RabbitMQ para recordatorios y un proveedor de SMS.",
+  ),
   stack: { languages: ["python"], frameworks: ["flask", "sqlalchemy"], runtime: "python 3.11", packageManager: "pip" },
   run: {
     install: "pip install -r requirements.txt",
@@ -96,22 +166,22 @@ const DISCOVERY_EXAMPLE = {
     env: [{ name: "DATABASE_URL", required: true, example: "mysql://clinic:clinic@legacy-mysql:3306/clinic" }],
   },
   nodes: [
-    { id: "patients", label: "Patient apps", kind: "client", tech: "http", description: "Web and mobile clients", paths: [] },
-    { id: "api", label: "Appointments API", kind: "service", tech: "flask", description: "Routes, scheduling rules", paths: ["legacy/app"] },
-    { id: "mysql", label: "MySQL", kind: "datastore", tech: "mysql", description: "Patients, doctors, appointments", paths: ["legacy/migrations"] },
-    { id: "reminders", label: "Reminder worker", kind: "worker", tech: "celery", description: "Sends reminders", paths: ["legacy/worker.py"] },
-    { id: "sms", label: "SMS gateway", kind: "external", tech: "twilio", description: "Outbound SMS", paths: [] },
+    { id: "patients", label: tr("Patient apps", "Apps dos pacientes", "Apps de pacientes"), kind: "client", tech: "http", description: tr("Web and mobile clients", "Clientes web e mobile", "Clientes web y móviles"), paths: [] },
+    { id: "api", label: tr("Appointments API", "API de agendamentos", "API de citas"), kind: "service", tech: "flask", description: tr("Routes, scheduling rules", "Rotas, regras de agenda", "Rutas, reglas de agenda"), paths: ["legacy/app"] },
+    { id: "mysql", label: same("MySQL"), kind: "datastore", tech: "mysql", description: tr("Patients, doctors, appointments", "Pacientes, médicos, consultas", "Pacientes, médicos, citas"), paths: ["legacy/migrations"] },
+    { id: "reminders", label: tr("Reminder worker", "Worker de lembretes", "Worker de recordatorios"), kind: "worker", tech: "celery", description: tr("Sends reminders", "Envia lembretes", "Envía recordatorios"), paths: ["legacy/worker.py"] },
+    { id: "sms", label: tr("SMS gateway", "Gateway de SMS", "Pasarela de SMS"), kind: "external", tech: "twilio", description: tr("Outbound SMS", "SMS de saída", "SMS salientes"), paths: [] },
   ],
   edges: [
-    { from: "patients", to: "api", label: "REST/JSON", kind: "sync" },
-    { from: "api", to: "mysql", label: "SQL", kind: "data" },
-    { from: "api", to: "reminders", label: "enqueue", kind: "async" },
-    { from: "reminders", to: "sms", label: "HTTPS", kind: "sync" },
+    { from: "patients", to: "api", label: same("REST/JSON"), kind: "sync" },
+    { from: "api", to: "mysql", label: same("SQL"), kind: "data" },
+    { from: "api", to: "reminders", label: tr("enqueue", "enfileira", "encola"), kind: "async" },
+    { from: "reminders", to: "sms", label: same("HTTPS"), kind: "sync" },
   ],
   dependencies: [
-    { id: "mysql", name: "MySQL", kind: "database", tech: "mysql", version: "8", usedBy: ["api"], env: ["DATABASE_URL"], strategy: "container", image: "docker.io/library/mysql:8", notes: "Schema from legacy/migrations" },
-    { id: "rabbitmq", name: "RabbitMQ", kind: "queue", tech: "rabbitmq", version: "3", usedBy: ["api", "reminders"], env: ["BROKER_URL"], strategy: "container", image: "docker.io/library/rabbitmq:3-alpine", notes: "" },
-    { id: "sms", name: "SMS gateway", kind: "external-api", tech: "twilio", version: "", usedBy: ["reminders"], env: ["SMS_API_URL"], strategy: "mock", image: "", notes: "POST /messages" },
+    { id: "mysql", name: "MySQL", kind: "database", tech: "mysql", version: "8", usedBy: ["api"], env: ["DATABASE_URL"], strategy: "container", image: "docker.io/library/mysql:8", notes: tr("Schema from legacy/migrations", "Schema em legacy/migrations", "Esquema en legacy/migrations") },
+    { id: "rabbitmq", name: "RabbitMQ", kind: "queue", tech: "rabbitmq", version: "3", usedBy: ["api", "reminders"], env: ["BROKER_URL"], strategy: "container", image: "docker.io/library/rabbitmq:3-alpine", notes: same("") },
+    { id: "sms", name: "SMS gateway", kind: "external-api", tech: "twilio", version: "", usedBy: ["reminders"], env: ["SMS_API_URL"], strategy: "mock", image: "", notes: same("POST /messages") },
   ],
 }
 
@@ -132,13 +202,13 @@ ${JSON.stringify(DISCOVERY_EXAMPLE, null, 2)}`
 
 const ENTRYPOINTS_EXAMPLE = {
   entrypoints: [
-    { id: "list-slots", kind: "http", method: "GET", path: "/api/doctors/{id}/slots", name: "List free slots", file: "legacy/app/routes/doctors.py", line: 42, handler: "list_slots", summary: "Free 30-minute slots for a doctor on a date", dependencies: ["mysql"], complexity: "medium" },
-    { id: "book-appointment", kind: "http", method: "POST", path: "/api/appointments", name: "Book appointment", file: "legacy/app/routes/appointments.py", line: 18, handler: "book", summary: "Books a slot, enqueues a reminder", dependencies: ["mysql", "rabbitmq"], complexity: "high" },
-    { id: "send-reminders", kind: "job", method: "", path: "", name: "Send reminders", file: "legacy/worker.py", line: 10, handler: "send_reminders", summary: "Cron every 10 minutes", dependencies: ["mysql", "sms"], complexity: "medium" },
+    { id: "list-slots", kind: "http", method: "GET", path: "/api/doctors/{id}/slots", name: tr("List free slots", "Listar horários livres", "Listar horarios libres"), file: "legacy/app/routes/doctors.py", line: 42, handler: "list_slots", summary: tr("Free 30-minute slots for a doctor on a date", "Horários livres de 30 minutos de um médico em uma data", "Horarios libres de 30 minutos de un médico en una fecha"), dependencies: ["mysql"], complexity: "medium" },
+    { id: "book-appointment", kind: "http", method: "POST", path: "/api/appointments", name: tr("Book appointment", "Agendar consulta", "Reservar cita"), file: "legacy/app/routes/appointments.py", line: 18, handler: "book", summary: tr("Books a slot, enqueues a reminder", "Reserva um horário e enfileira um lembrete", "Reserva un horario y encola un recordatorio"), dependencies: ["mysql", "rabbitmq"], complexity: "high" },
+    { id: "send-reminders", kind: "job", method: "", path: "", name: tr("Send reminders", "Enviar lembretes", "Enviar recordatorios"), file: "legacy/worker.py", line: 10, handler: "send_reminders", summary: tr("Cron every 10 minutes", "Cron a cada 10 minutos", "Cron cada 10 minutos"), dependencies: ["mysql", "sms"], complexity: "medium" },
   ],
   batches: [
-    { id: "scheduling", title: "Scheduling", rationale: "Slots and bookings share availability rules and tables", icon: "calendar", entrypoints: ["list-slots", "book-appointment"] },
-    { id: "reminders", title: "Reminders", rationale: "Background notification flow", icon: "bell", entrypoints: ["send-reminders"] },
+    { id: "scheduling", title: tr("Scheduling", "Agenda", "Agenda"), rationale: tr("Slots and bookings share availability rules and tables", "Horários e reservas compartilham regras de disponibilidade e tabelas", "Horarios y reservas comparten reglas de disponibilidad y tablas"), icon: "calendar", entrypoints: ["list-slots", "book-appointment"] },
+    { id: "reminders", title: tr("Reminders", "Lembretes", "Recordatorios"), rationale: tr("Background notification flow", "Fluxo de notificação em segundo plano", "Flujo de notificaciones en segundo plano"), icon: "bell", entrypoints: ["send-reminders"] },
   ],
 }
 
@@ -168,12 +238,18 @@ export function environmentPrompt(ctx: PromptContext) {
   const example = {
     composeFile: "migration/env/compose.yml",
     services: [
-      { name: "legacy", role: "legacy", image: "", notes: "Built from migration/env/legacy.Dockerfile" },
-      { name: "legacy-mysql", role: "dependency", image: "docker.io/library/mysql:8", notes: "Seeded from legacy/migrations" },
-      { name: "legacy-mock-sms", role: "mock", image: "", notes: "Canned responses for POST /messages" },
+      { name: "legacy", role: "legacy", image: "", notes: tr("Built from migration/env/legacy.Dockerfile", "Construído a partir de migration/env/legacy.Dockerfile", "Construido desde migration/env/legacy.Dockerfile") },
+      { name: "legacy-mysql", role: "dependency", image: "docker.io/library/mysql:8", notes: tr("Seeded from legacy/migrations", "Populado a partir de legacy/migrations", "Poblado desde legacy/migrations") },
+      { name: "legacy-mock-sms", role: "mock", image: "", notes: tr("Canned responses for POST /messages", "Respostas prontas para POST /messages", "Respuestas fijas para POST /messages") },
     ],
-    mocks: [{ dependency: "sms", approach: "Tiny HTTP server returning a queued message id", files: ["migration/env/mocks/sms/server.js"] }],
-    limitations: ["Reminder worker is not started; queue side effects are not observable over HTTP"],
+    mocks: [{ dependency: "sms", approach: tr("Tiny HTTP server returning a queued message id", "Servidor HTTP mínimo que devolve o id de uma mensagem enfileirada", "Servidor HTTP mínimo que devuelve el id de un mensaje encolado"), files: ["migration/env/mocks/sms/server.js"] }],
+    limitations: [
+      tr(
+        "Reminder worker is not started; queue side effects are not observable over HTTP",
+        "O worker de lembretes não é iniciado; os efeitos na fila não são observáveis via HTTP",
+        "El worker de recordatorios no se inicia; los efectos en la cola no son observables por HTTP",
+      ),
+    ],
   }
   return `${preamble(ctx, artifacts.environment)}
 
@@ -203,7 +279,7 @@ function batchList(ctx: PromptContext) {
   const ids = new Set(ctx.batch?.entrypoints ?? [])
   return (ctx.entrypoints?.entrypoints ?? [])
     .filter((e) => ids.has(e.id))
-    .map((e) => `- ${e.id}: ${[e.method, e.path].filter(Boolean).join(" ") || e.name} — ${e.file}${e.line ? `:${e.line}` : ""} — ${e.summary}`)
+    .map((e) => `- ${e.id}: ${[e.method, e.path].filter(Boolean).join(" ") || e.name.en} — ${e.file}${e.line ? `:${e.line}` : ""} — ${e.summary.en}`)
     .join("\n")
 }
 
@@ -216,21 +292,25 @@ export function rulesPrompt(ctx: PromptContext) {
       {
         entrypoint: "book-appointment",
         flow: [
-          { file: "legacy/app/routes/appointments.py", line: 18, description: "Parse JSON body and authenticate patient" },
-          { file: "legacy/app/services/booking.py", line: 55, description: "Check the slot is free inside a transaction" },
+          { file: "legacy/app/routes/appointments.py", line: 18, description: tr("Parse JSON body and authenticate patient", "Lê o corpo JSON e autentica o paciente", "Lee el cuerpo JSON y autentica al paciente") },
+          { file: "legacy/app/services/booking.py", line: 55, description: tr("Check the slot is free inside a transaction", "Verifica em transação se o horário está livre", "Comprueba en una transacción que el horario esté libre") },
         ],
         rules: [
           {
             id: "book-appointment-r1",
-            title: "Bookings need 24h notice",
+            title: tr("Bookings need 24h notice", "Agendamentos exigem 24h de antecedência", "Las reservas requieren 24 h de antelación"),
             kind: "validation",
-            description: "A slot can only be booked if it starts at least 24 hours from now.",
+            description: tr(
+              "A slot can only be booked if it starts at least 24 hours from now.",
+              "Um horário só pode ser reservado se começar em pelo menos 24 horas.",
+              "Un horario solo puede reservarse si empieza dentro de al menos 24 horas.",
+            ),
             file: "legacy/app/services/booking.py",
             lineStart: 61,
             lineEnd: 66,
             decisions: [
-              { id: "book-appointment-r1.1", when: "slot starts in less than 24h", then: "422 {\"error\":\"too_late\"}" },
-              { id: "book-appointment-r1.2", when: "slot starts in 24h or more", then: "continue to availability check" },
+              { id: "book-appointment-r1.1", when: tr("slot starts in less than 24h", "horário começa em menos de 24h", "el horario empieza en menos de 24 h"), then: same('422 {"error":"too_late"}') },
+              { id: "book-appointment-r1.2", when: tr("slot starts in 24h or more", "horário começa em 24h ou mais", "el horario empieza en 24 h o más"), then: tr("continue to availability check", "segue para a verificação de disponibilidade", "continúa con la comprobación de disponibilidad") },
             ],
           },
         ],
@@ -241,7 +321,7 @@ export function rulesPrompt(ctx: PromptContext) {
 
 Context: ${artifacts.discovery} and ${artifacts.entrypoints}.
 
-Task: batch "${batch.title}". Trace each entry point end to end and extract the business rules it encodes:
+Task: batch "${batch.title.en}". Trace each entry point end to end and extract the business rules it encodes:
 ${batchList(ctx)}
 
 For each entry point follow the call chain from the handler through services, helpers, queries and integrations to the response, and record it as ordered flow steps with file and line. Then extract every business rule on that path — validations, calculations, authorization checks, state transitions, persistence side effects, integration calls and error handling. For each rule give the file and line range and a decision table with one row per branch: "when" is the condition, "then" the observable outcome (status code, response fields, side effect). Be exact about literal values: limits, status codes, error messages, rounding, defaults. Rule ids are short and stable, prefixed with the entry point id.
@@ -260,7 +340,7 @@ export function testsPrompt(ctx: PromptContext) {
         id: "book-too-late",
         entrypoint: "book-appointment",
         rules: ["book-appointment-r1"],
-        title: "Rejects a booking with less than 24h notice",
+        title: tr("Rejects a booking with less than 24h notice", "Recusa agendamento com menos de 24h de antecedência", "Rechaza una reserva con menos de 24 h de antelación"),
         branch: "book-appointment-r1.1",
         request: { method: "POST", path: "/api/appointments", headers: { Authorization: "Bearer patient-1" }, query: {}, body: { slotId: 7 } },
         expect: { status: 422, body: { error: "too_late" }, match: "exact" },
@@ -270,7 +350,7 @@ export function testsPrompt(ctx: PromptContext) {
         id: "book-ok",
         entrypoint: "book-appointment",
         rules: ["book-appointment-r1", "book-appointment-r2"],
-        title: "Books a free slot",
+        title: tr("Books a free slot", "Reserva um horário livre", "Reserva un horario libre"),
         branch: "book-appointment-r1.2",
         request: { method: "POST", path: "/api/appointments", headers: { Authorization: "Bearer patient-1" }, query: {}, body: { slotId: 12 } },
         expect: { status: 201, body: { status: "booked", slotId: 12 }, match: "subset" },
@@ -282,7 +362,7 @@ export function testsPrompt(ctx: PromptContext) {
 
 Context: ${artifacts.batch(batch.id, "rules")} (the rules you extracted) and migration/env (how legacy runs, including its seed data).
 
-Task: write characterization tests for batch "${batch.title}" at the entry-point boundary — real HTTP requests in, expected responses out. Not unit tests.
+Task: write characterization tests for batch "${batch.title.en}" at the entry-point boundary — real HTTP requests in, expected responses out. Not unit tests.
 - As many cases as the code has branches: every decision row in rules.json is exercised by at least one case — happy paths, each validation failure, not found, authorization failures, boundary values.
 - Requests run against the legacy app started with the seeded dependencies from migration/env, in the listed order, starting from freshly seeded state. Use ids and values that exist in the seeds; when a case needs data, create it in an earlier case.
 - Only HTTP entry points can be tested this way; skip the others.
@@ -301,18 +381,24 @@ export function portPrompt(ctx: PromptContext) {
   const example = {
     batch: "scheduling",
     files: [
-      { path: "v2/internal/domain/booking/notice.go", purpose: "24h notice rule" },
-      { path: "v2/internal/httpapi/routes.go", purpose: "Route table" },
+      { path: "v2/internal/domain/booking/notice.go", purpose: tr("24h notice rule", "Regra de 24h de antecedência", "Regla de 24 h de antelación") },
+      { path: "v2/internal/httpapi/routes.go", purpose: tr("Route table", "Tabela de rotas", "Tabla de rutas") },
     ],
     routes: [{ entrypoint: "book-appointment", method: "POST", path: "/api/appointments", handler: "httpapi.BookAppointment" }],
     mapping: [{ rule: "book-appointment-r1", function: "booking.CheckNotice", file: "v2/internal/domain/booking/notice.go" }],
-    notes: ["Timestamps are formatted with the legacy layout 2006-01-02T15:04:05Z"],
+    notes: [
+      tr(
+        "Timestamps are formatted with the legacy layout 2006-01-02T15:04:05Z",
+        "Datas usam o formato do legado 2006-01-02T15:04:05Z",
+        "Las fechas usan el formato del legado 2006-01-02T15:04:05Z",
+      ),
+    ],
   }
   return `${preamble(ctx, output)}
 
 Context: ${artifacts.batch(batch.id, "rules")} holds the rules to preserve and ${artifacts.batch(batch.id, "tests")} the exact HTTP behavior to reproduce: status codes, JSON field names and order-independent shapes, error messages, number and date formats. Where they disagree, the legacy code is the source of truth. ${artifacts.batch(batch.id, "legacy-run")} holds the real legacy responses when available — match those byte for byte where possible.
 
-Task: port batch "${batch.title}" to ${target.label} in v2/:
+Task: port batch "${batch.title.en}" to ${target.label} in v2/:
 ${batchList(ctx)}
 
 Architecture:
@@ -332,32 +418,33 @@ export function reconcilePrompt(ctx: PromptContext) {
   const parity = ctx.parity!
   const target = targetOf(ctx.project)
   const output = artifacts.batch(batch.id, "reconcile")
-  const clip = (value: unknown) => {
-    const s = typeof value === "string" ? value : JSON.stringify(value)
-    return s && s.length > 1200 ? `${s.slice(0, 1200)}…` : s
-  }
   const requests = new Map((ctx.tests?.cases ?? []).map((c) => [c.id, c.request]))
   const mismatches = parity.results
     .filter((r) => !r.comparison.match)
     .slice(0, 25)
     .map(
       (r) => `### ${r.caseId}
-request: ${clip(requests.get(r.caseId))}
-legacy: ${r.legacy.error ? `error ${r.legacy.error}` : `${r.legacy.status} ${clip(r.legacy.body)}`}
-v2: ${r.v2.error ? `error ${r.v2.error}` : `${r.v2.status} ${clip(r.v2.body)}`}
-differences: ${clip(r.comparison.diffs.slice(0, 12))}`,
+request: ${clipJson(requests.get(r.caseId))}
+legacy: ${r.legacy.error ? `error ${r.legacy.error}` : `${r.legacy.status} ${clipJson(r.legacy.body)}`}
+v2: ${r.v2.error ? `error ${r.v2.error}` : `${r.v2.status} ${clipJson(r.v2.body)}`}
+differences: ${clipJson(r.comparison.diffs.slice(0, 12))}`,
     )
     .join("\n\n")
   const example = {
     batch: "scheduling",
     fixes: [
-      { case: "book-too-late", cause: "v2 compared against local time, legacy uses UTC", change: "Use UTC in CheckNotice", files: ["v2/internal/domain/booking/notice.go"] },
+      {
+        case: "book-too-late",
+        cause: tr("v2 compared against local time, legacy uses UTC", "O v2 comparava com a hora local; o legado usa UTC", "v2 comparaba con la hora local; el legado usa UTC"),
+        change: tr("Use UTC in CheckNotice", "Usar UTC em CheckNotice", "Usar UTC en CheckNotice"),
+        files: ["v2/internal/domain/booking/notice.go"],
+      },
     ],
     notes: [],
   }
   return `${preamble(ctx, output)}
 
-Task: the side-by-side run of batch "${batch.title}" found ${parity.total - parity.matched} of ${parity.total} cases where v2 answers differently from legacy. Legacy is the source of truth. For each mismatch, read the legacy code path and the v2 code, find the cause and fix v2 so the response is identical. Do not change legacy, the tests or the legacy services.
+Task: the side-by-side run of batch "${batch.title.en}" found ${parity.total - parity.matched} of ${parity.total} cases where v2 answers differently from legacy. Legacy is the source of truth. For each mismatch, read the legacy code path and the v2 code, find the cause and fix v2 so the response is identical. Do not change legacy, the tests or the legacy services.
 
 ${mismatches}
 
@@ -387,8 +474,18 @@ differences: ${clipJson(r.expectation.diffs.slice(0, 12))}`,
   const example = {
     batch: "scheduling",
     fixes: [
-      { case: "book-ok", cause: "The token of the login case was written literally", action: "request", change: "Authorization uses {{login-patient.$.token}}" },
-      { case: "book-too-late", cause: "Legacy checks notice before the slot exists", action: "expectation", change: "Expects 404 slot_not_found" },
+      {
+        case: "book-ok",
+        cause: tr("The token of the login case was written literally", "O token do caso de login foi escrito literalmente", "El token del caso de login se escribió literalmente"),
+        action: "request",
+        change: tr("Authorization uses {{login-patient.$.token}}", "Authorization usa {{login-patient.$.token}}", "Authorization usa {{login-patient.$.token}}"),
+      },
+      {
+        case: "book-too-late",
+        cause: tr("Legacy checks notice before the slot exists", "O legado verifica a antecedência antes de o horário existir", "El legado comprueba la antelación antes de que exista el horario"),
+        action: "expectation",
+        change: tr("Expects 404 slot_not_found", "Espera 404 slot_not_found", "Espera 404 slot_not_found"),
+      },
     ],
     notes: [],
   }

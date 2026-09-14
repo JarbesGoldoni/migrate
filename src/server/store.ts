@@ -65,6 +65,13 @@ export class Store {
     await writeJson(this.file, [record, ...all])
   }
 
+  async remove(id: string) {
+    await writeJson(
+      this.file,
+      (await this.list()).filter((p) => p.id !== id),
+    )
+  }
+
   async loadState(project: ProjectRecord): Promise<ProjectState> {
     const data = (await readJson(join(project.workspace, artifacts.state))) as Partial<ProjectState> | undefined
     const base = emptyState()

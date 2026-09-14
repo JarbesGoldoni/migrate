@@ -26,7 +26,7 @@ const DEP_NODE_KIND: Record<string, string> = {
 }
 
 export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activity: Activity[] }) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const { active: replaying } = useReplayView()
   const discovery = snapshot.discovery
   const running = phaseStatus(snapshot, "discover") === "running"
@@ -57,7 +57,7 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
       {discovery && (
         <>
           <Panel className="p-5">
-            <p className="text-[15px] leading-relaxed text-slate-200">{discovery.summary}</p>
+            <p className="text-[15px] leading-relaxed text-slate-200">{l(discovery.summary)}</p>
             {stack.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {stack.map((tech, i) => (
@@ -154,7 +154,7 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
 }
 
 function DependencyCard({ dependency, index }: { dependency: Dependency; index: number }) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const strategy = STRATEGIES[dependency.strategy] ?? STRATEGIES.mock
   const KindIcon = DEPENDENCY_KINDS[dependency.kind] ?? Boxes
   return (
@@ -181,7 +181,7 @@ function DependencyCard({ dependency, index }: { dependency: Dependency; index: 
           {t(`strategy.${dependency.strategy}` as Key)}
         </Badge>
       </div>
-      {dependency.notes && <p className="mt-3 text-xs leading-relaxed text-slate-400">{dependency.notes}</p>}
+      {l(dependency.notes) && <p className="mt-3 text-xs leading-relaxed text-slate-400">{l(dependency.notes)}</p>}
       {dependency.env.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1">
           {dependency.env.map((env) => (

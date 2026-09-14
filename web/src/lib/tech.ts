@@ -310,8 +310,24 @@ export function readableHex(hex: string) {
   return luminance < 0.28 ? "#d5dbe7" : `#${hex}`
 }
 
-export const TARGET_TECH: Record<string, string> = { go: "go", typescript: "hono", python: "fastapi" }
-export const TARGET_LABEL: Record<string, string> = { go: "Go", typescript: "TypeScript", python: "Python" }
+export const TARGET_TECH: Record<string, string> = {
+  go: "go",
+  rust: "rust",
+  csharp: "dotnet",
+  typescript: "hono",
+  kotlin: "kotlin",
+  java: "java",
+  python: "fastapi",
+}
+export const TARGET_LABEL: Record<string, string> = {
+  go: "Go",
+  rust: "Rust",
+  csharp: "C#",
+  typescript: "TypeScript",
+  kotlin: "Kotlin",
+  java: "Java",
+  python: "Python",
+}
 
 export const MARKER_TECH: Record<string, string> = {
   node: "node",

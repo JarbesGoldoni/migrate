@@ -1,6 +1,8 @@
 // Messages the server produces for people. The server keeps an English
 // fallback next to each one; the UI renders the key in the viewer's language.
 
+import type { Localized } from "./contracts"
+
 export const MESSAGE_KEYS = [
   "tool.read",
   "tool.scan",
@@ -45,7 +47,8 @@ export const MESSAGE_KEYS = [
 
 export type MessageKey = (typeof MESSAGE_KEYS)[number]
 
-export type MessageParams = Record<string, string | number>
+/** Localized params (a batch or test title) are rendered in the viewer's language. */
+export type MessageParams = Record<string, string | number | Localized>
 
 export type Message = { key: MessageKey; params?: MessageParams }
 

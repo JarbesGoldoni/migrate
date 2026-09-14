@@ -73,7 +73,7 @@ describe("Pipeline", () => {
     expect((await pipeline.start(project.id, "discover")).reason).toBe("Already running")
     let snapshot = await waitPhase(pipeline, project.id, "discover")
     expect(snapshot.state.phases.discover.status).toBe("done")
-    expect(snapshot.discovery?.summary).toBe("Shop API")
+    expect(snapshot.discovery?.summary.en).toBe("Shop API")
     expect(snapshot.state.sessions.project).toBe("ses-discover")
     expect(snapshot.activity.some((a) => a.title === "Read legacy/app.js")).toBe(true)
     expect(engine.calls[0].model).toEqual({ providerID: "p", modelID: "m" })
@@ -246,7 +246,7 @@ describe("Pipeline", () => {
     engine.outputs.discover = () => ({ path: artifacts.discovery, data: { summary: "Loja", nodes: [{ id: "api" }] } })
     await pipeline.start(project.id, "discover")
     await waitPhase(pipeline, project.id, "discover")
-    expect(engine.calls.at(-1)?.prompt).toContain("in Brazilian Portuguese")
+    expect(engine.calls.at(-1)?.prompt).toContain('{"en": "...", "pt-BR": "...", "es": "..."}')
 
     const history = await pipeline.history(project.id)
     expect(history.find((a) => a.kind === "system")?.message).toEqual({ key: "activity.phaseStarted", params: { phase: "discover" } })

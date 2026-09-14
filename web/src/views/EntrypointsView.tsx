@@ -90,7 +90,7 @@ export function EntrypointsView({ snapshot, activity }: { snapshot: Snapshot; ac
 }
 
 function BatchCard({ snapshot, batch, index, replaying }: { snapshot: Snapshot; batch: Batch; index: number; replaying: boolean }) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const id = snapshot.project.id
   const Icon = batchIcon(batch.icon)
   const progress = batchProgress(snapshot, batch.id)
@@ -115,10 +115,10 @@ function BatchCard({ snapshot, batch, index, replaying }: { snapshot: Snapshot; 
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-semibold text-white">{batch.title}</h3>
+            <h3 className="truncate font-semibold text-white">{l(batch.title)}</h3>
             <span className="rounded-full bg-white/[0.06] px-2 text-xs text-slate-400">{items.length}</span>
           </div>
-          <p className="mt-0.5 line-clamp-2 text-sm text-slate-400">{batch.rationale}</p>
+          <p className="mt-0.5 line-clamp-2 text-sm text-slate-400">{l(batch.rationale)}</p>
         </div>
         {progress.proven && <BadgeCheck className="size-5 shrink-0 text-emerald-400" />}
       </div>
@@ -138,8 +138,8 @@ function BatchCard({ snapshot, batch, index, replaying }: { snapshot: Snapshot; 
         {items.slice(0, 7).map((entry) => (
           <li key={entry.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-white/[0.03]">
             <MethodBadge method={entry.method} kind={entry.kind} />
-            <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-200" title={entry.summary}>
-              {entry.path || entry.name}
+            <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-slate-200" title={l(entry.summary)}>
+              {entry.path || l(entry.name)}
             </span>
             <span className="hidden truncate text-[10px] text-slate-600 md:block">
               {entry.file.split("/").pop()}

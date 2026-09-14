@@ -1,3 +1,4 @@
+import type { Localized } from "../../../src/shared/contracts"
 import type { Message } from "../../../src/shared/messages"
 import type { Locale } from "../../../src/shared/types"
 import { en, type Key } from "./locales/en"
@@ -5,7 +6,14 @@ import { es } from "./locales/es"
 import { ptBR } from "./locales/pt-BR"
 
 export type { Key }
-export type Params = Record<string, string | number>
+export type Params = Record<string, string | number | Localized>
+
+/** Text the agent wrote, in the viewer's language (English when a translation is missing). */
+export function localize(locale: Locale, value: Localized | string | undefined) {
+  if (value === undefined) return ""
+  if (typeof value === "string") return value
+  return value[locale] || value.en
+}
 
 export const DICTIONARIES: Record<Locale, Record<Key, string>> = { en, "pt-BR": ptBR, es }
 
@@ -21,7 +29,11 @@ export function isKey(key: string): key is Key {
 
 export function translate(locale: Locale, key: Key, params?: Params) {
   const template = DICTIONARIES[locale]?.[key] ?? en[key]
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => (params?.[name] === undefined ? match : String(params[name])))
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    const value = params?.[name]
+    if (value === undefined) return match
+    return typeof value === "object" ? localize(locale, value) : String(value)
+  })
 }
 
 /** Render a server message in the viewer's language, falling back to the server's English text. */

@@ -56,7 +56,7 @@ describe("pipeline progress", () => {
     const midway = snapshot(
       {
         entrypoints,
-        rules: { catalog: { batch: "catalog", entrypoints: [{ entrypoint: "list", flow: [], rules: [{ id: "r", title: "", kind: "other", description: "", file: "", lineStart: 0, lineEnd: 0, decisions: [] }] }] } },
+        rules: { catalog: { batch: "catalog", entrypoints: [{ entrypoint: "list", flow: [], rules: [{ id: "r", title: { en: "", "pt-BR": "", es: "" }, kind: "other", description: { en: "", "pt-BR": "", es: "" }, file: "", lineStart: 0, lineEnd: 0, decisions: [] }] }] } },
         tests: { catalog: tests },
         legacyRuns: { catalog: { batch: "catalog", at: 1, baseUrl: "", results: [] } },
         ports: { catalog: { batch: "catalog", files: [], routes: [], mapping: [], notes: [] } },

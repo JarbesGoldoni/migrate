@@ -13,6 +13,7 @@ import {
   Plus,
   ScrollText,
   Search,
+  Trash2,
   TriangleAlert,
   Waypoints,
 } from "lucide-react"
@@ -20,6 +21,7 @@ import { motion } from "motion/react"
 import { useEffect, useMemo, useState } from "react"
 import type { MigrationListItem } from "../../../src/shared/types"
 import { Backdrop, Logo, TechIcon } from "../components/brand"
+import { Dialog } from "../components/Dialog"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { Badge, Button, EmptyState, type Tone } from "../components/ui"
 import { api } from "../lib/api"
@@ -107,7 +109,12 @@ export function Migrations() {
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           {filtered.map((item, i) => (
-            <MigrationCard key={item.project.id} item={item} index={i} />
+            <MigrationCard
+              key={item.project.id}
+              item={item}
+              index={i}
+              onDeleted={() => setItems((all) => all?.filter((other) => other.project.id !== item.project.id))}
+            />
           ))}
         </div>
       </div>
@@ -128,9 +135,10 @@ function statusOf(item: MigrationListItem): { key: Key; tone: Tone } {
   return { key: "migrations.status.new", tone: "slate" }
 }
 
-function MigrationCard({ item, index }: { item: MigrationListItem; index: number }) {
+function MigrationCard({ item, index, onDeleted }: { item: MigrationListItem; index: number; onDeleted: () => void }) {
   const { t, ago, date } = useI18n()
   const [opening, setOpening] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const { project, summary } = item
   const status = statusOf(item)
   const replayable = summary.steps > 0 && !summary.running && !summary.missing
@@ -228,8 +236,72 @@ function MigrationCard({ item, index }: { item: MigrationListItem; index: number
         >
           {t("common.open")}
         </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          title={t("delete.button")}
+          disabled={summary.running}
+          icon={<Trash2 className="size-3.5 text-rose-300" />}
+          onClick={() => setDeleting(true)}
+        />
       </div>
+      <DeleteDialog item={item} open={deleting} onClose={() => setDeleting(false)} onDeleted={onDeleted} />
     </motion.div>
+  )
+}
+
+function DeleteDialog({ item, open, onClose, onDeleted }: { item: MigrationListItem; open: boolean; onClose: () => void; onDeleted: () => void }) {
+  const { t } = useI18n()
+  const [branch, setBranch] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const { project, summary } = item
+
+  const remove = async () => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await api.remove(project.id, branch)
+      onClose()
+      onDeleted()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={t("delete.title", { name: project.name })}
+      icon={
+        <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-rose-500/10">
+          <Trash2 className="size-4 text-rose-300" />
+        </div>
+      }
+    >
+      <p className="text-sm leading-relaxed text-slate-400">{t("delete.text")}</p>
+      <div className="mt-3 truncate rounded-lg bg-black/30 px-3 py-2 font-mono text-[11px] text-slate-500" title={project.workspace}>
+        {project.workspace}
+      </div>
+      {summary.linked && (
+        <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm text-slate-300">
+          <input type="checkbox" checked={branch} onChange={(e) => setBranch(e.target.checked)} className="size-4 accent-rose-400" />
+          {t("delete.branch", { branch: project.branch })}
+        </label>
+      )}
+      {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>
+          {t("common.cancel")}
+        </Button>
+        <Button variant="danger" loading={busy} icon={<Trash2 className="size-4" />} onClick={remove}>
+          {t("delete.confirm")}
+        </Button>
+      </div>
+    </Dialog>
   )
 }
 

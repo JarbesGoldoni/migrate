@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { join } from "node:path"
 import { createApp } from "../src/server/app"
+import type { WorkspaceOpener } from "../src/server/editors"
 import { EventBus } from "../src/server/bus"
 import { Pipeline } from "../src/server/pipeline"
 import { Store } from "../src/server/store"
@@ -18,13 +19,13 @@ afterAll(() => {
   else process.env.MIGRATE_HOME = previousHome
 })
 
-async function makeApp(webRoot?: string) {
+async function makeApp(webRoot?: string, opener?: WorkspaceOpener) {
   const home = await tempDir()
   const engine = new FakeEngine()
   const bus = new EventBus()
   const store = new Store(join(home, "projects.json"))
   const pipeline = new Pipeline({ store, engine, bus, exec: isolatedExec, workspaces: join(home, "ws"), bootTimeoutMs: 500, httpTimeoutMs: 500 })
-  const app = createApp({ pipeline, engine, store, bus, exec: isolatedExec, webRoot, version: "9.9.9" })
+  const app = createApp({ pipeline, engine, store, bus, exec: isolatedExec, webRoot, version: "9.9.9", opener })
   const json = async (path: string, init?: RequestInit) => {
     const response = await app.request(path, init)
     return { status: response.status, body: (await response.json()) as any }
@@ -39,7 +40,10 @@ describe("HTTP API", () => {
     const { json } = await makeApp()
     expect((await json("/api/health")).body).toEqual({ ok: true, version: "9.9.9" })
     expect((await json("/api/engine")).body.ready).toBe(true)
-    expect((await json("/api/targets")).body.map((t: { id: string }) => t.id)).toContain("go")
+    const targets = (await json("/api/targets")).body
+    expect(targets.find((t: { id: string }) => t.id === "go")).toEqual({ id: "go", label: "Go", cost: 1, recommended: true })
+    expect(targets.map((t: { id: string }) => t.id)).toContain("rust")
+    expect(Array.isArray((await json("/api/editors")).body)).toBe(true)
     const dir = await tempDir()
     await writeFiles(dir, { "app/package.json": "{}" })
     expect((await json(`/api/fs?path=${encodeURIComponent(dir)}`)).body.entries[0].markers).toEqual(["node"])
@@ -102,6 +106,30 @@ describe("HTTP API", () => {
     controller.abort()
     await reader.cancel().catch(() => {})
     expect((await json("/api/projects/nope/events")).status).toBe(404)
+  })
+
+  test("opens, exports and deletes a migration", async () => {
+    const opened: string[] = []
+    const opener: WorkspaceOpener = {
+      editors: () => [{ id: "code", label: "VS Code" }],
+      editor: async (path, id) => (opened.push(`${id}:${path}`), true),
+      folder: async (path) => (opened.push(`folder:${path}`), false),
+    }
+    const { json, post, app } = await makeApp(undefined, opener)
+    const repo = await gitRepo({ "a.js": "1" })
+    const id = (await post("/api/projects", { source: repo })).body.id
+    expect((await json("/api/editors")).body).toEqual([{ id: "code", label: "VS Code" }])
+    expect((await post(`/api/projects/${id}/open`, { editor: "code" })).body.opened).toBe(true)
+    const folder = await post(`/api/projects/${id}/open`, {})
+    expect(folder.status).toBe(422)
+    expect(folder.body.error).toContain("Could not open")
+    expect(opened.map((o) => o.split(":")[0])).toEqual(["code", "folder"])
+
+    const exported = await post(`/api/projects/${id}/export`, { branch: "review/v2" })
+    expect(exported.body).toMatchObject({ branch: "review/v2", command: "git checkout review/v2" })
+    const deleted = await app.request(`/api/projects/${id}?branch=1`, { method: "DELETE" })
+    expect(await deleted.json()).toEqual({ deleted: true })
+    expect((await json("/api/projects")).body).toEqual([])
   })
 
   test("creates the sample project", async () => {

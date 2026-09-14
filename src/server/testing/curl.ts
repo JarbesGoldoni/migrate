@@ -26,7 +26,7 @@ export function curlCommand(testCase: TestCase, base = "${BASE_URL}") {
 export function curlScript(testCase: TestCase) {
   return [
     "#!/usr/bin/env sh",
-    `# ${testCase.title}`,
+    `# ${testCase.title.en}`,
     ...(testCase.branch ? [`# Branch: ${testCase.branch}`] : []),
     ...(testCase.rules.length ? [`# Rules: ${testCase.rules.join(", ")}`] : []),
     `# Expect: HTTP ${testCase.expect.status}`,

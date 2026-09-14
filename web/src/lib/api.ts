@@ -15,7 +15,9 @@ import type {
 } from "../../../src/shared/types"
 
 export type Snapshot = ProjectSnapshot & { activity: Activity[] }
-export type Target = { id: string; label: string }
+export type Target = { id: string; label: string; cost: 1 | 2 | 3; recommended: boolean }
+export type Editor = { id: string; label: string }
+export type ExportResult = { branch: string; commit: string; repository: string; command: string }
 export type FileWindow = { path: string; from: number; to: number; total: number; lines: string[] }
 export type PlaygroundResult = { legacy?: HttpResult; v2?: HttpResult; comparison?: Comparison }
 
@@ -59,4 +61,11 @@ export const api = {
       `/api/projects/${id}/file?path=${encodeURIComponent(path)}${start ? `&start=${start}` : ""}${end ? `&end=${end}` : ""}`,
     ),
   tree: (id: string, dir: string) => request<{ files: string[] }>(`/api/projects/${id}/tree?dir=${encodeURIComponent(dir)}`),
+  editors: () => request<Editor[]>("/api/editors"),
+  open: (id: string, editor?: string) =>
+    request<{ opened: boolean; path: string }>(`/api/projects/${id}/open`, { method: "POST", json: { editor } }),
+  exportBranch: (id: string, branch: string) =>
+    request<ExportResult>(`/api/projects/${id}/export`, { method: "POST", json: { branch } }),
+  remove: (id: string, branch: boolean) =>
+    request<{ deleted: boolean }>(`/api/projects/${id}${branch ? "?branch=1" : ""}`, { method: "DELETE" }),
 }

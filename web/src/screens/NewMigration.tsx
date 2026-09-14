@@ -10,10 +10,11 @@ import {
   FolderGit2,
   GitBranch,
   House,
-  Languages,
   Layers,
+  Leaf,
   LoaderCircle,
   type LucideIcon,
+  PiggyBank,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
@@ -260,15 +261,18 @@ export function NewMigration({ sample }: { sample: boolean }) {
                         </div>
                       )}
                     </div>
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-                      <Languages className="size-3.5" />
-                      {t("new.resultsLanguage", { language: t(`language.${locale}`) })}
+                    <div className="mt-5 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("new.migrateTo")}</span>
+                      <span className="flex-1" />
+                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                        <PiggyBank className="size-3.5" />
+                        {t("new.cloudCost")}
+                      </span>
                     </div>
-
-                    <div className="mt-5 text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("new.migrateTo")}</div>
-                    <div className="mt-3 flex flex-col gap-2">
-                      {(targets.length ? targets : [{ id: "go", label: "Go" }]).map((option) => {
+                    <div className="mt-3 flex max-h-[430px] flex-col gap-2 overflow-y-auto pr-1">
+                      {(targets.length ? targets : FALLBACK_TARGETS).map((option) => {
                         const blurb = `target.${option.id}`
+                        const selected = target === option.id
                         return (
                           <button
                             type="button"
@@ -276,28 +280,41 @@ export function NewMigration({ sample }: { sample: boolean }) {
                             onClick={() => setTarget(option.id)}
                             className={cn(
                               "relative flex cursor-pointer items-center gap-3 rounded-xl p-3 text-left ring-1 transition",
-                              target === option.id ? "bg-cyan-400/[0.07] ring-cyan-400/40" : "bg-white/[0.02] ring-white/[0.07] hover:bg-white/[0.05]",
+                              selected
+                                ? "bg-cyan-400/[0.07] ring-cyan-400/40"
+                                : option.recommended
+                                  ? "bg-emerald-400/[0.03] ring-emerald-400/25 hover:bg-emerald-400/[0.06]"
+                                  : "bg-white/[0.02] ring-white/[0.07] hover:bg-white/[0.05]",
                             )}
                           >
-                            <div className="grid size-10 place-items-center rounded-xl bg-black/40">
+                            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/40">
                               <TechIcon tech={TARGET_TECH[option.id] ?? option.id} size={22} />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-sm font-medium text-white">
+                              <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-white">
                                 {option.label}
-                                {option.id === "go" && <Badge tone="cyan">{t("new.recommended")}</Badge>}
+                                {option.recommended && (
+                                  <Badge tone="emerald" icon={Leaf}>
+                                    {t("new.finops")}
+                                  </Badge>
+                                )}
                               </div>
                               {isKey(blurb) && <div className="text-xs text-slate-400">{t(blurb)}</div>}
                             </div>
-                            {target === option.id && (
+                            <CostMeter cost={option.cost} />
+                            {selected && (
                               <motion.span layoutId="target-check">
-                                <CircleCheck className="size-5 text-cyan-300" />
+                                <CircleCheck className="size-5 shrink-0 text-cyan-300" />
                               </motion.span>
                             )}
                           </button>
                         )
                       })}
                     </div>
+                    <p className="mt-3 flex gap-2 text-xs leading-relaxed text-slate-500">
+                      <Leaf className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
+                      {t("new.finopsHint")}
+                    </p>
                   </Panel>
 
                   <Button variant="primary" size="lg" className="w-full" loading={starting} disabled={!preflight?.ready || !model} icon={<ArrowRight className="size-5" />} onClick={start}>
@@ -313,6 +330,24 @@ export function NewMigration({ sample }: { sample: boolean }) {
         </div>
       </div>
     </motion.div>
+  )
+}
+
+const FALLBACK_TARGETS: Target[] = [{ id: "go", label: "Go", cost: 1, recommended: true }]
+
+function CostMeter({ cost }: { cost: 1 | 2 | 3 }) {
+  const { t } = useI18n()
+  const tone = cost === 1 ? "bg-emerald-400" : cost === 2 ? "bg-amber-400" : "bg-rose-400"
+  const label = t(`new.cost.${cost}` as Key)
+  return (
+    <span className="flex shrink-0 flex-col items-end gap-1" title={`${t("new.cloudCost")}: ${label}`}>
+      <span className="flex items-end gap-0.5">
+        {[1, 2, 3].map((bar) => (
+          <span key={bar} className={cn("w-1.5 rounded-sm", bar <= cost ? tone : "bg-white/10")} style={{ height: 4 + bar * 4 }} />
+        ))}
+      </span>
+      <span className="text-[10px] text-slate-500">{label}</span>
+    </span>
   )
 }
 

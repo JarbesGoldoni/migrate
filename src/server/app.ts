@@ -5,6 +5,7 @@ import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
 import { isBatchPhase, isLocale, isProjectPhase, type HttpRequestSpec, type ServerEvent } from "../shared/types"
 import type { EventBus } from "./bus"
+import { systemOpener, type WorkspaceOpener } from "./editors"
 import type { Engine } from "./engine/engine"
 import { listDirectory } from "./fsbrowse"
 import { NotFoundError, type Pipeline } from "./pipeline"
@@ -22,6 +23,7 @@ export type AppDeps = {
   exec: Exec
   webRoot?: string
   version: string
+  opener?: WorkspaceOpener
 }
 
 const MIME: Record<string, string> = {
@@ -39,6 +41,7 @@ const MIME: Record<string, string> = {
 export function createApp(deps: AppDeps) {
   const app = new Hono()
   const { pipeline, engine, store, bus, exec } = deps
+  const opener = deps.opener ?? systemOpener(exec)
 
   app.onError((error, c) => {
     const status = error instanceof NotFoundError ? 404 : 500
@@ -50,8 +53,10 @@ export function createApp(deps: AppDeps) {
   app.get("/api/engine", async (c) => c.json(await engine.info()))
 
   app.get("/api/targets", (c) =>
-    c.json(Object.entries(TARGETS).map(([id, t]) => ({ id, label: t.label }))),
+    c.json(Object.entries(TARGETS).map(([id, t]) => ({ id, label: t.label, cost: t.cost, recommended: Boolean(t.recommended) }))),
   )
+
+  app.get("/api/editors", (c) => c.json(opener.editors()))
 
   app.get("/api/fs", async (c) => {
     try {
@@ -108,6 +113,24 @@ export function createApp(deps: AppDeps) {
         language: isLocale(body.language) ? body.language : undefined,
       }),
     )
+  })
+
+  app.delete("/api/projects/:id", async (c) =>
+    c.json(await pipeline.deleteProject(c.req.param("id"), { branch: c.req.query("branch") === "1" })),
+  )
+
+  app.post("/api/projects/:id/export", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { branch?: string }
+    return c.json(await pipeline.exportBranch(c.req.param("id"), body.branch))
+  })
+
+  app.post("/api/projects/:id/open", async (c) => {
+    const project = await pipeline.project(c.req.param("id"))
+    const body = (await c.req.json().catch(() => ({}))) as { editor?: string }
+    const opened = body.editor ? await opener.editor(project.workspace, body.editor) : await opener.folder(project.workspace)
+    return opened
+      ? c.json({ opened, path: project.workspace })
+      : c.json({ opened, path: project.workspace, error: `Could not open ${project.workspace}` }, 422)
   })
 
   app.post("/api/projects/:id/run", async (c) => {

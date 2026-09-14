@@ -8,6 +8,7 @@ import {
   type PromptContext,
   reconcilePrompt,
   rulesPrompt,
+  TARGETS,
   targetOf,
   testsPrompt,
   verifyPrompt,
@@ -59,10 +60,22 @@ describe("prompts", () => {
       expect(prompt).toContain("/ws/shop-ab12")
       expect(prompt).toContain(`"${output}"`)
       expect(prompt).toContain("never modify")
-      expect(prompt).toContain("in English")
+      expect(prompt).toContain('{"en": "...", "pt-BR": "...", "es": "..."}')
     }
-    expect(discoverPrompt({ ...ctx, project: { ...project, language: "pt-BR" } })).toContain("in Brazilian Portuguese")
-    expect(rulesPrompt({ ...ctx, project: { ...project, language: "es" } })).toContain("in Spanish")
+    // Examples show every human-readable value in the three languages.
+    expect(rulesPrompt(ctx)).toContain('"pt-BR": "Agendamentos exigem 24h de antecedência"')
+  })
+
+  test("targets describe how to build each stack, with Go as the lowest-cost recommendation", () => {
+    const recommended = Object.entries(TARGETS).filter(([, target]) => target.recommended)
+    expect(recommended.map(([id]) => id)).toEqual(["go"])
+    expect(TARGETS.go.cost).toBe(1)
+    for (const target of Object.values(TARGETS)) {
+      expect(target.architecture).toContain("Dockerfile")
+      expect(target.verify.length).toBeGreaterThan(0)
+      expect([1, 2, 3]).toContain(target.cost)
+    }
+    expect(portPrompt({ ...ctx, project: { ...project, target: "rust" } })).toContain("axum")
   })
 
   test("environment prompt carries ports, compose command and dependencies", () => {

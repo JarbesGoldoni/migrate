@@ -26,6 +26,7 @@ import { Logo, TechIcon } from "../components/brand"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { ModelPicker } from "../components/ModelPicker"
 import { ReplayBar, ReplayFinished } from "../components/ReplayBar"
+import { WorkspaceActions } from "../components/WorkspaceActions"
 import { Badge, Button, CountUp, StatusIcon } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
 import { cn } from "../lib/format"
@@ -227,6 +228,7 @@ function TopBar({
         <ReplayBar />
       ) : (
         <>
+          <WorkspaceActions project={project} />
           <Button
             size="sm"
             variant="outline"
@@ -329,7 +331,7 @@ function railStatus(snapshot: Snapshot, phase: ProjectPhase): PhaseStatus {
 }
 
 function PhaseRail({ snapshot, current }: { snapshot: Snapshot; current: string }) {
-  const { t } = useI18n()
+  const { t, l } = useI18n()
   const go = (view: string) => navigate(`/m/${snapshot.project.id}/${view}`)
   const batches = snapshot.entrypoints?.batches ?? []
   const numbers = totals(snapshot)
@@ -365,7 +367,7 @@ function PhaseRail({ snapshot, current }: { snapshot: Snapshot; current: string 
                       <Icon className="size-4 text-slate-300" />
                     </span>
                     <span className="relative min-w-0 flex-1">
-                      <span className="block truncate text-sm text-slate-200">{batch.title}</span>
+                      <span className="block truncate text-sm text-slate-200">{l(batch.title)}</span>
                       <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-white/[0.06]">
                         <motion.span
                           className={cn("block h-full rounded-full", progress.proven ? "bg-emerald-400" : "bg-gradient-migrate")}

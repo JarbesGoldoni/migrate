@@ -90,7 +90,7 @@ describe("replay frames", () => {
     expect(early.current).toBe("discover")
 
     const afterDiscover = at(T + 5_500)
-    expect(afterDiscover.snapshot.discovery?.summary).toBe("Shop")
+    expect(afterDiscover.snapshot.discovery?.summary.en).toBe("Shop")
     expect(afterDiscover.snapshot.state.phases.discover.status).toBe("done")
     expect(afterDiscover.snapshot.activity.find((a) => a.id === "d2")?.status).toBe("done")
 

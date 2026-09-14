@@ -13,12 +13,13 @@ import { Pipeline } from "./server/pipeline"
 import { Store } from "./server/store"
 import { exec } from "./server/util/exec"
 import { freePort } from "./server/util/ports"
+import { openAppWindow, resolveAppWindow } from "./server/window"
 
 const HELP = `
   simplify-migrate — watch AI migrate a legacy system
 
   Usage
-    simplify-migrate [options]        start the app and open it in your browser
+    simplify-migrate [options]        start the app in its own window (or your browser)
     simplify-migrate auth login       connect an AI provider (OpenAI, Copilot, Z.AI, ...)
     simplify-migrate auth list        show connected providers
     simplify-migrate auth logout      disconnect a provider
@@ -27,7 +28,8 @@ const HELP = `
   Options
     --port <n>     Port to listen on (default 4800, or the next free one)
     --host <h>     Host to bind (default 127.0.0.1)
-    --no-open      Do not open the browser
+    --browser      Open in the browser instead of the app window
+    --no-open      Do not open anything
     -v, --version  Print the version
     -h, --help     Show this help
 `
@@ -50,6 +52,7 @@ const { values } = parseArgs({
     port: { type: "string" },
     host: { type: "string", default: "127.0.0.1" },
     "no-open": { type: "boolean", default: false },
+    browser: { type: "boolean", default: false },
     "api-only": { type: "boolean", default: false },
     version: { type: "boolean", short: "v", default: false },
     help: { type: "boolean", short: "h", default: false },
@@ -93,10 +96,12 @@ serve({ fetch: app.fetch, port, hostname: values.host }, async () => {
   console.log(`  Ready on ${cyan(url)}`)
   console.log(dim("  Press Ctrl+C to stop\n"))
   void engine.info()
-  if (!values["no-open"] && !values["api-only"]) {
-    const opened = await openBrowser(url, exec)
-    if (!opened) console.log(dim(`  Open ${url} in your browser`))
-  }
+  if (values["no-open"] || values["api-only"]) return
+  const window = values.browser ? undefined : resolveAppWindow(import.meta.url)
+  // Closing the app window stops the app.
+  if (window && (await openAppWindow(window, url, shutdown))) return
+  const opened = await openBrowser(url, exec)
+  if (!opened) console.log(dim(`  Open ${url} in your browser`))
 })
 
 const shutdown = () => {

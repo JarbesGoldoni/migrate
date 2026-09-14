@@ -11,9 +11,36 @@ import {
   parseReconcile,
   parseRules,
   parseTests,
+  localized,
+  mapLocalized,
+  parseVerify,
+  prose,
+  proseList,
   slug,
   text,
 } from "../src/shared/contracts"
+
+const same = (value: string) => ({ en: value, "pt-BR": value, es: value })
+
+describe("localized text", () => {
+  test("accepts translations, aliases and plain strings, falling back to English", () => {
+    expect(localized({ en: " Hi ", "pt-BR": "Oi", es: "Hola" })).toEqual({ en: "Hi", "pt-BR": "Oi", es: "Hola" })
+    expect(localized({ english: "Hi", pt: "Oi" })).toEqual({ en: "Hi", "pt-BR": "Oi", es: "Hi" })
+    expect(localized({ es: "Hola" })).toEqual(same("Hola"))
+    expect(localized("Plain")).toEqual(same("Plain"))
+    expect(localized(3)).toEqual(same("3"))
+    expect(localized(["x"], "fallback")).toEqual(same("fallback"))
+    expect(localized({ en: "" }, "fallback")).toEqual(same("fallback"))
+    expect(prose().parse(undefined)).toEqual(same(""))
+    expect(proseList().parse(["a", "", { en: "b" }])).toEqual([same("a"), same("b")])
+    expect(mapLocalized({ en: "abc", "pt-BR": "defg", es: "hi" }, (s) => s.slice(0, 2))).toEqual({ en: "ab", "pt-BR": "de", es: "hi" })
+  })
+
+  test("parseVerify keeps fixes that name a case", () => {
+    const verify = parseVerify({ fixes: [{ case: "c1", cause: { en: "why", es: "por qué" }, action: "REMOVED" }, { cause: "orphan" }] })
+    expect(verify.fixes).toEqual([{ case: "c1", cause: { en: "why", "pt-BR": "why", es: "por qué" }, action: "removed", change: same("") }])
+  })
+})
 
 describe("lenient primitives", () => {
   test("text, int, bool and oneOf fall back instead of failing", () => {
@@ -66,10 +93,10 @@ describe("parseDiscovery", () => {
       dependencies: [{ name: "Redis", strategy: "CONTAINER", kind: "cache" }, { id: "x", strategy: "?" }],
       run: { port: "3000", env: [{ name: "A", required: "true" }] },
     })
-    expect(d.summary).toBe("42")
+    expect(d.summary).toEqual(same("42"))
     expect(d.nodes.map((n) => n.id)).toEqual(["api", "postgresql", "api-2"])
     expect(d.nodes[0].kind).toBe("service")
-    expect(d.nodes[1]).toMatchObject({ kind: "module", label: "PostgreSQL" })
+    expect(d.nodes[1]).toMatchObject({ kind: "module", label: same("PostgreSQL") })
     expect(d.edges).toHaveLength(1)
     expect(d.edges[0]).toMatchObject({ from: "api", to: "postgresql", kind: "data" })
     expect(d.dependencies.map((x) => [x.id, x.name, x.strategy])).toEqual([
@@ -98,9 +125,11 @@ describe("parseEntryPoints", () => {
     expect(e.entrypoints.map((x) => x.id)).toEqual(["list", "post-api-cart-quote", "nightly"])
     expect(e.entrypoints.map((x) => x.method)).toEqual(["GET", "POST", ""])
     expect(e.batches).toEqual([
-      expect.objectContaining({ id: "catalog", title: "Catalog", entrypoints: ["list"] }),
+      expect.objectContaining({ id: "catalog", title: same("Catalog"), entrypoints: ["list"] }),
       expect.objectContaining({ id: "other", entrypoints: ["post-api-cart-quote", "nightly"] }),
     ])
+    expect(e.batches[1].title["pt-BR"]).toBe("Outros pontos de entrada")
+    expect(e.entrypoints[1].name).toEqual(same("POST /api/cart/quote"))
   })
 
   test("avoids clashing with a batch already called other", () => {
@@ -116,8 +145,8 @@ describe("other contracts", () => {
   test("parseEnvironment drops unnamed services and defaults the compose file", () => {
     const env = parseEnvironment({ services: [{ name: "legacy", role: "LEGACY" }, { role: "mock" }], limitations: ["x", 3] })
     expect(env.composeFile).toBe("migration/env/compose.yml")
-    expect(env.services).toEqual([{ name: "legacy", role: "legacy", image: "", notes: "" }])
-    expect(env.limitations).toEqual(["x", "3"])
+    expect(env.services).toEqual([{ name: "legacy", role: "legacy", image: "", notes: same("") }])
+    expect(env.limitations).toEqual([same("x"), same("3")])
   })
 
   test("parseRules generates stable unique ids", () => {
@@ -137,8 +166,8 @@ describe("other contracts", () => {
     })
     expect(rules.entrypoints).toHaveLength(1)
     const [first, second, third] = rules.entrypoints[0].rules
-    expect(first).toMatchObject({ id: "list-products-r1", title: "Limit must be between 1 and 50", lineEnd: 10 })
-    expect(first.decisions).toEqual([{ id: "list-products-r1.1", when: "limit > 50", then: "400" }])
+    expect(first).toMatchObject({ id: "list-products-r1", title: same("Limit must be between 1 and 50"), lineEnd: 10 })
+    expect(first.decisions).toEqual([{ id: "list-products-r1.1", when: same("limit > 50"), then: same("400") }])
     expect(second.id).toBe("dup")
     expect(third.id).toBe("dup-2")
     expect(third.decisions[0].id).toBe("custom")

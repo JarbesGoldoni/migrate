@@ -165,6 +165,7 @@ export function isLocale(value: unknown): value is Locale {
 }
 
 export type MigrationSummary = {
+  linked: boolean
   missing: boolean
   running: boolean
   steps: number
