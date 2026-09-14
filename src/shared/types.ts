@@ -1,3 +1,4 @@
+import type { Message } from "./messages"
 import type {
   Discovery,
   Environment,
@@ -35,6 +36,7 @@ export type PhaseState = {
   finishedAt?: number
   error?: string
   note?: string
+  noteMessage?: Message
 }
 
 export type ActivityKind =
@@ -59,6 +61,7 @@ export type Activity = {
   phase: string
   kind: ActivityKind
   title: string
+  message?: Message
   detail?: string
   status?: "running" | "done" | "error"
 }
@@ -148,8 +151,33 @@ export type ProjectRecord = {
   createdAt: number
   model?: ModelRef
   target: string
+  language?: Locale
   ports: { legacy: number; v2: number }
 }
+
+export const LOCALES = ["en", "pt-BR", "es"] as const
+
+export type Locale = (typeof LOCALES)[number]
+
+export function isLocale(value: unknown): value is Locale {
+  return typeof value === "string" && (LOCALES as readonly string[]).includes(value)
+}
+
+export type MigrationSummary = {
+  missing: boolean
+  running: boolean
+  steps: number
+  batches: number
+  batchesProven: number
+  entrypoints: number
+  rules: number
+  cases: number
+  matched: number
+  compared: number
+  lastActivity?: number
+}
+
+export type MigrationListItem = { project: ProjectRecord; summary: MigrationSummary }
 
 export type ProjectState = {
   phases: Record<string, PhaseState>

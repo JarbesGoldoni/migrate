@@ -1,5 +1,5 @@
 import type { Batch, Discovery, EntryPoints } from "../shared/contracts"
-import type { ParityRun, ProjectRecord } from "../shared/types"
+import type { Locale, ParityRun, ProjectRecord } from "../shared/types"
 import { artifacts } from "./store"
 
 export type PromptContext = {
@@ -49,6 +49,8 @@ export const TARGETS: Record<string, { label: string; architecture: string; veri
   },
 }
 
+const LANGUAGE_NAMES: Record<Locale, string> = { en: "English", "pt-BR": "Brazilian Portuguese", es: "Spanish" }
+
 export function targetOf(project: ProjectRecord) {
   return TARGETS[project.target] ?? TARGETS.go
 }
@@ -69,6 +71,7 @@ Workspace layout:
 Rules of engagement:
 - Be efficient: locate code with glob and grep, read only what you need, do not narrate.
 - Never ask questions. Make reasonable assumptions and record them.
+- Write every human-readable text value (summaries, titles, descriptions, rationales, flow steps, decision rows, notes, limitations) in ${LANGUAGE_NAMES[ctx.project.language ?? "en"]}. Keep ids, JSON keys, file paths, code identifiers, HTTP methods and paths, and literal response values exactly as they are.
 - Commands that can block (container builds, "compose up", servers, installs) always get a timeout of at most 5 minutes; never start a foreground process that does not exit.
 - Finish by writing the JSON document to "${output}" (relative to the workspace root; absolute path ${root}/${output}) with the write tool. Valid JSON only: no comments, no trailing commas. Then reply with one short sentence.`
 }

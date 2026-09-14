@@ -1,3 +1,4 @@
+import { type Message, type MessageKey, type MessageParams, msg } from "../../shared/messages"
 import type { Activity, ActivityKind } from "../../shared/types"
 
 type Part = {
@@ -45,39 +46,57 @@ function firstLine(s: string, max = 110) {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean
 }
 
-function toolTitle(tool: string, input: Record<string, unknown>, root: string) {
+function describe(title: string, key: MessageKey, params: MessageParams) {
+  return { title, message: msg(key, params) }
+}
+
+function toolText(tool: string, input: Record<string, unknown>, root: string): { title: string; message?: Message } {
   const path = relativePath(input.filePath ?? input.path, root)
   switch (tool) {
     case "read":
-      return `Read ${path}`
-    case "glob":
-      return `Scan ${String(input.pattern ?? "")}${input.path ? ` in ${relativePath(input.path, root)}` : ""}`
+      return describe(`Read ${path}`, "tool.read", { path })
+    case "glob": {
+      const pattern = String(input.pattern ?? "")
+      if (!input.path) return describe(`Scan ${pattern}`, "tool.scan", { pattern })
+      const dir = relativePath(input.path, root)
+      return describe(`Scan ${pattern} in ${dir}`, "tool.scanIn", { pattern, path: dir })
+    }
     case "list":
-      return `List ${path || "."}`
+      return describe(`List ${path || "."}`, "tool.list", { path: path || "." })
     case "grep":
-    case "codesearch":
-      return `Search “${String(input.pattern ?? input.query ?? "")}”`
+    case "codesearch": {
+      const pattern = String(input.pattern ?? input.query ?? "")
+      return describe(`Search “${pattern}”`, "tool.search", { pattern })
+    }
     case "edit":
     case "multiedit":
     case "patch":
     case "apply_patch":
-      return `Edit ${path || "files"}`
+      return describe(`Edit ${path || "files"}`, "tool.edit", { path: path || "files" })
     case "write":
-      return `Write ${path}`
-    case "bash":
-      return `Run ${firstLine(String(input.description ?? input.command ?? ""), 90)}`
-    case "webfetch":
-      return `Fetch ${String(input.url ?? "")}`
-    case "websearch":
-      return `Search the web for “${String(input.query ?? "")}”`
-    case "todowrite": {
-      const todos = Array.isArray(input.todos) ? input.todos.length : 0
-      return `Plan ${todos} step${todos === 1 ? "" : "s"}`
+      return describe(`Write ${path}`, "tool.write", { path })
+    case "bash": {
+      const command = firstLine(String(input.description ?? input.command ?? ""), 90)
+      return describe(`Run ${command}`, "tool.run", { command })
     }
-    case "task":
-      return `Delegate ${firstLine(String(input.description ?? "subtask"), 90)}`
+    case "webfetch": {
+      const url = String(input.url ?? "")
+      return describe(`Fetch ${url}`, "tool.fetch", { url })
+    }
+    case "websearch": {
+      const query = String(input.query ?? "")
+      return describe(`Search the web for “${query}”`, "tool.webSearch", { query })
+    }
+    case "todowrite": {
+      const count = Array.isArray(input.todos) ? input.todos.length : 0
+      return describe(`Plan ${count} step${count === 1 ? "" : "s"}`, "tool.plan", { count })
+    }
+    case "task": {
+      const task = firstLine(String(input.description ?? "subtask"), 90)
+      return describe(`Delegate ${task}`, "tool.delegate", { task })
+    }
     default:
-      return tool
+      return { title: tool }
   }
 }
 
@@ -125,7 +144,7 @@ export function toActivity(
     return {
       ...base,
       kind: status === "error" ? "error" : toolKind(part.tool),
-      title: toolTitle(part.tool, input, ctx.root),
+      ...toolText(part.tool, input, ctx.root),
       detail: status === "error" ? String(part.state?.error ?? "") : toolDetail(part.tool, input),
       status: status === "completed" ? "done" : status === "error" ? "error" : "running",
     }

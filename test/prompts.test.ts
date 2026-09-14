@@ -58,7 +58,10 @@ describe("prompts", () => {
       expect(prompt).toContain("/ws/shop-ab12")
       expect(prompt).toContain(`"${output}"`)
       expect(prompt).toContain("never modify")
+      expect(prompt).toContain("in English")
     }
+    expect(discoverPrompt({ ...ctx, project: { ...project, language: "pt-BR" } })).toContain("in Brazilian Portuguese")
+    expect(rulesPrompt({ ...ctx, project: { ...project, language: "es" } })).toContain("in Spanish")
   })
 
   test("environment prompt carries ports, compose command and dependencies", () => {

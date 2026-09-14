@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import { writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { EventBus } from "../src/server/bus"
-import { locateOutput, NotFoundError, Pipeline, targetLabel } from "../src/server/pipeline"
+import { locateOutput, NotFoundError, Pipeline, summarize, targetLabel } from "../src/server/pipeline"
 import { artifacts, Store } from "../src/server/store"
 import { exec } from "../src/server/util/exec"
 import { FakeEngine, gitRepo, isolatedExec, tempDir, waitPhase } from "./helpers"
@@ -141,6 +141,21 @@ describe("Pipeline", () => {
     snapshot = await waitPhase(pipeline, project.id, "parity:catalog")
     expect(snapshot.parity.catalog).toMatchObject({ matched: 2, total: 3 })
     expect(snapshot.state.phases["parity:catalog"].note).toBe("2/3 responses identical")
+    expect(snapshot.state.phases["parity:catalog"].noteMessage).toEqual({ key: "note.parity", params: { matched: 2, total: 3 } })
+    expect(snapshot.state.phases["legacy:catalog"].noteMessage).toEqual({ key: "note.legacyMatched", params: { agreed: 2, total: 3 } })
+    expect(summarize(snapshot, false)).toMatchObject({
+      steps: 8,
+      batches: 1,
+      batchesProven: 0,
+      entrypoints: 2,
+      rules: 1,
+      cases: 3,
+      matched: 2,
+      compared: 3,
+      running: false,
+    })
+    expect(summarize(undefined, true)).toMatchObject({ missing: true, steps: 0 })
+    expect(summarize(undefined, true).lastActivity).toBeUndefined()
 
     engine.outputs.reconcile = (options) => {
       expect(options.prompt).toContain("### missing")
@@ -198,6 +213,34 @@ describe("Pipeline", () => {
     await expect(pipeline.snapshot("nope")).rejects.toBeInstanceOf(NotFoundError)
     await expect(pipeline.createProject({ source: join(repo, "missing") })).rejects.toThrow("Folder not found")
     expect((await pipeline.start(project.id, "bogus" as never)).reason).toBe("Unknown phase bogus")
+  }, 30_000)
+
+  test("keeps a replayable history, lists migrations and writes in the chosen language", async () => {
+    const { repo, engine, store, pipeline } = await setup()
+    const project = await pipeline.createProject({ source: repo, language: "pt-BR" })
+    expect(project.language).toBe("pt-BR")
+    expect((await pipeline.createProject({ source: repo, language: "xx" as never })).language).toBe("en")
+
+    engine.outputs.discover = () => ({ path: artifacts.discovery, data: { summary: "Loja", nodes: [{ id: "api" }] } })
+    await pipeline.start(project.id, "discover")
+    await waitPhase(pipeline, project.id, "discover")
+    expect(engine.calls.at(-1)?.prompt).toContain("in Brazilian Portuguese")
+
+    const history = await pipeline.history(project.id)
+    expect(history.find((a) => a.kind === "system")?.message).toEqual({ key: "activity.phaseStarted", params: { phase: "discover" } })
+    expect(existsSync(join(project.workspace, artifacts.phaseActivity("discover")))).toBe(true)
+
+    const reloaded = new Pipeline({ store, engine, bus: new EventBus(), exec: isolatedExec })
+    expect((await reloaded.history(project.id)).map((a) => a.id)).toEqual(history.map((a) => a.id))
+    const listed = await reloaded.migrations()
+    expect(listed.find((m) => m.project.id === project.id)?.summary).toMatchObject({ missing: false, steps: 1, running: false })
+    expect(listed.find((m) => m.project.id === project.id)?.summary.lastActivity).toBeGreaterThan(0)
+
+    await store.put({ ...project, id: "gone", workspace: join(project.workspace, "missing") })
+    expect((await reloaded.migrations()).find((m) => m.project.id === "gone")?.summary).toMatchObject({ missing: true, steps: 0 })
+
+    expect((await pipeline.updateProject(project.id, { language: "es" })).language).toBe("es")
+    expect((await pipeline.updateProject(project.id, { language: "xx" as never })).language).toBe("es")
   }, 30_000)
 
   test("locateOutput prefers the expected path, then writes, then the reply", async () => {

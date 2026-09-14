@@ -38,6 +38,15 @@ describe("activity mapping", () => {
     for (const [tool, input, title] of cases) {
       expect(toActivity(toolEvent(tool, "running", input), ctx)?.title).toBe(title)
     }
+    expect(toActivity(toolEvent("read", "running", { filePath: "/ws/legacy/a.js" }), ctx)?.message).toEqual({
+      key: "tool.read",
+      params: { path: "legacy/a.js" },
+    })
+    expect(toActivity(toolEvent("glob", "running", { pattern: "*.go", path: "/ws/v2" }), ctx)?.message).toEqual({
+      key: "tool.scanIn",
+      params: { pattern: "*.go", path: "v2" },
+    })
+    expect(toActivity(toolEvent("custom_tool", "running"), ctx)?.message).toBeUndefined()
     expect(toActivity(toolEvent("bash", "completed", { command: "ls" }), ctx)).toMatchObject({ kind: "bash", detail: "ls", status: "done" })
     expect(toActivity(toolEvent("todowrite", "completed", { todos: [{ content: "a" }, "x"] }), ctx)?.detail).toBe("a")
     expect(toActivity(toolEvent("read", "error", {}, { error: "denied" }), ctx)).toMatchObject({ kind: "error", detail: "denied", status: "error" })

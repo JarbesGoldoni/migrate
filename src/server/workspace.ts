@@ -61,7 +61,7 @@ async function moveIntoLegacy(workspace: string, exec: Exec) {
 async function scaffold(workspace: string, exec: Exec, message = "migrate: prepare migration workspace") {
   await mkdir(join(workspace, "migration"), { recursive: true })
   await mkdir(join(workspace, "v2"), { recursive: true })
-  await writeFile(join(workspace, "migration", ".gitignore"), "state.json\nactivity.json\n")
+  await writeFile(join(workspace, "migration", ".gitignore"), "state.json\nactivity.json\nactivity/\n")
   await writeFile(
     join(workspace, "migration", "README.md"),
     [

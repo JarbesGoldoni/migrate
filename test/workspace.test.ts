@@ -121,6 +121,18 @@ describe("Store", () => {
     expect(snapshot.parity.catalog).toBeDefined()
     expect(snapshot.reconcile.catalog.batch).toBe("catalog")
 
+    expect(await store.loadActivity({ ...project, workspace: join(dir, "nowhere") })).toEqual([])
+    await writeJson(join(workspace, artifacts.activity), [
+      { id: "old", at: 5, phase: "discover", kind: "read", title: "Old" },
+      { id: "a1", at: 1, phase: "discover", kind: "read", title: "Stale" },
+    ])
+    await store.saveActivity(project, "rules:catalog", [{ id: "a1", at: 3, phase: "rules:catalog", kind: "write", title: "Fresh" }])
+    expect(existsSync(join(workspace, "migration", "activity", "rules__catalog.json"))).toBe(true)
+    expect((await store.loadActivity(project)).map((a) => [a.id, a.title])).toEqual([
+      ["a1", "Fresh"],
+      ["old", "Old"],
+    ])
+
     await writeFile(join(dir, "broken.json"), "{nope")
     expect(await readJson(join(dir, "broken.json"))).toBeUndefined()
     expect(await readJson(join(dir, "absent.json"))).toBeUndefined()

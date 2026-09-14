@@ -8,9 +8,22 @@ import { exec } from "../src/server/util/exec"
 
 const [id, batch] = process.argv.slice(2)
 const pipeline = new Pipeline({ store: new Store(), engine: new OpencodeEngine(), bus: new EventBus(), exec })
-const run = await pipeline.runParity(id, batch)
-for (const r of run.results) {
-  console.log(`${r.comparison.match ? "✓" : "✗"} ${r.caseId} legacy=${r.legacy.status} v2=${r.v2.status}${r.comparison.match ? "" : ` ${JSON.stringify(r.comparison.diffs.slice(0, 3))}`}`)
+
+// Going through start() records the phase state and history like a run from the UI.
+const started = await pipeline.start(id, "parity", batch)
+if (!started.started) {
+  console.error(started.reason)
+  process.exit(1)
 }
-console.log(`parity ${run.matched}/${run.total}${run.error ? ` (${run.error})` : ""}`)
-process.exit(0)
+while (true) {
+  await Bun.sleep(1_000)
+  const snapshot = await pipeline.snapshot(id)
+  const state = snapshot.state.phases[`parity:${batch}`]
+  if (state?.status === "running") continue
+  for (const r of snapshot.parity[batch]?.results ?? []) {
+    const extra = r.comparison.match ? "" : ` ${JSON.stringify(r.comparison.diffs.slice(0, 3))}`
+    console.log(`${r.comparison.match ? "✓" : "✗"} ${r.caseId} legacy=${r.legacy.status} v2=${r.v2.status}${extra}`)
+  }
+  console.log(`parity ${state?.status}: ${state?.note ?? state?.error ?? ""}`)
+  process.exit(state?.status === "done" ? 0 : 1)
+}

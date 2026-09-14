@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
   parseDiscovery,
@@ -9,7 +9,7 @@ import {
   parseRules,
   parseTests,
 } from "../shared/contracts"
-import type { BuildReport, LegacyRun, ParityRun, ProjectRecord, ProjectSnapshot, ProjectState } from "../shared/types"
+import type { Activity, BuildReport, LegacyRun, ParityRun, ProjectRecord, ProjectSnapshot, ProjectState } from "../shared/types"
 import { projectsFile } from "./paths"
 
 export type BatchArtifact = "rules" | "tests" | "legacy-run" | "port" | "build" | "parity" | "reconcile"
@@ -17,6 +17,8 @@ export type BatchArtifact = "rules" | "tests" | "legacy-run" | "port" | "build" 
 export const artifacts = {
   state: "migration/state.json",
   activity: "migration/activity.json",
+  activityDir: "migration/activity",
+  phaseActivity: (key: string) => `migration/activity/${key.replace(/:/g, "__")}.json`,
   discovery: "migration/discovery.json",
   entrypoints: "migration/entrypoints.json",
   environment: "migration/environment.json",
@@ -78,6 +80,27 @@ export class Store {
 
   async saveState(project: ProjectRecord, state: ProjectState) {
     await writeJson(join(project.workspace, artifacts.state), state)
+  }
+
+  /** Keep the full activity of one phase run, so a migration can be replayed later. */
+  async saveActivity(project: ProjectRecord, key: string, items: Activity[]) {
+    await writeJson(join(project.workspace, artifacts.phaseActivity(key)), items)
+  }
+
+  async loadActivity(project: ProjectRecord): Promise<Activity[]> {
+    const dir = join(project.workspace, artifacts.activityDir)
+    const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).sort()
+    // Older migrations kept a single capped activity.json; phase files take precedence over it.
+    const lists = [
+      await readJson(join(project.workspace, artifacts.activity)),
+      ...(await Promise.all(files.map((file) => readJson(join(dir, file))))),
+    ]
+    const byId = new Map<string, Activity>()
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue
+      for (const item of list as Activity[]) if (item?.id) byId.set(item.id, item)
+    }
+    return [...byId.values()].sort((a, b) => a.at - b.at)
   }
 
   async snapshot(project: ProjectRecord, state: ProjectState): Promise<ProjectSnapshot> {

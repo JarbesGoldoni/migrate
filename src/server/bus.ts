@@ -2,7 +2,7 @@ import type { Activity, ServerEvent } from "../shared/types"
 
 type Listener = (event: ServerEvent) => void
 
-const KEEP = 600
+const KEEP = 2000
 
 export class EventBus {
   private listeners = new Map<string, Set<Listener>>()

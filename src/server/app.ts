@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from "node:fs/promises"
 import { extname, join, normalize, relative, resolve, sep } from "node:path"
 import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
-import { isBatchPhase, isProjectPhase, type HttpRequestSpec, type ServerEvent } from "../shared/types"
+import { isBatchPhase, isLocale, isProjectPhase, type HttpRequestSpec, type ServerEvent } from "../shared/types"
 import type { EventBus } from "./bus"
 import type { Engine } from "./engine/engine"
 import { listDirectory } from "./fsbrowse"
@@ -71,17 +71,43 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/projects", async (c) => c.json(await store.list()))
 
+  app.get("/api/migrations", async (c) => c.json(await pipeline.migrations()))
+
   app.post("/api/projects", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { source?: string; model?: { providerID: string; modelID: string }; target?: string }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      source?: string
+      model?: { providerID: string; modelID: string }
+      target?: string
+      language?: string
+    }
     if (!body.source) return c.json({ error: "source is required" }, 400)
-    return c.json(await pipeline.createProject({ source: body.source, model: body.model, target: body.target }))
+    return c.json(
+      await pipeline.createProject({
+        source: body.source,
+        model: body.model,
+        target: body.target,
+        language: isLocale(body.language) ? body.language : undefined,
+      }),
+    )
   })
 
   app.get("/api/projects/:id", async (c) => c.json(await pipeline.snapshot(c.req.param("id"))))
 
+  app.get("/api/projects/:id/history", async (c) => c.json(await pipeline.history(c.req.param("id"))))
+
   app.patch("/api/projects/:id", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { model?: { providerID: string; modelID: string }; target?: string }
-    return c.json(await pipeline.updateProject(c.req.param("id"), body))
+    const body = (await c.req.json().catch(() => ({}))) as {
+      model?: { providerID: string; modelID: string }
+      target?: string
+      language?: string
+    }
+    return c.json(
+      await pipeline.updateProject(c.req.param("id"), {
+        model: body.model,
+        target: body.target,
+        language: isLocale(body.language) ? body.language : undefined,
+      }),
+    )
   })
 
   app.post("/api/projects/:id/run", async (c) => {

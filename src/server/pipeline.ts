@@ -1,11 +1,17 @@
 import { randomBytes } from "node:crypto"
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import type { Batch } from "../shared/contracts"
+import { type Message, msg } from "../shared/messages"
 import {
   type Activity,
   type BuildStep,
   type HttpRequestSpec,
+  isLocale,
+  type Locale,
+  type MigrationListItem,
+  type MigrationSummary,
   type ModelRef,
   type PhaseName,
   type PhaseState,
@@ -21,8 +27,8 @@ import { type Compose, compose, detectCompose, waitForHttp } from "./env/compose
 import { workspacesDir } from "./paths"
 import { PHASES, type PhaseDefinition, type PhaseOps } from "./phases"
 import { probeProject } from "./preflight"
-import { composeProject, TARGETS, type PromptContext, targetOf } from "./prompts"
-import { artifacts, readJson, type Store, writeJson } from "./store"
+import { composeProject, type PromptContext, TARGETS, targetOf } from "./prompts"
+import { artifacts, type Store, writeJson } from "./store"
 import { compareExpectation, compareResponses } from "./testing/compare"
 import { writeCurlScripts } from "./testing/curl"
 import { sendRequest } from "./testing/http"
@@ -45,6 +51,8 @@ export type PipelineDeps = {
 
 export type Snapshot = ProjectSnapshot & { activity: Activity[] }
 
+type Note = { text: string; message?: Message }
+
 export class Pipeline {
   private states = new Map<string, ProjectState>()
   private controllers = new Map<string, AbortController>()
@@ -53,7 +61,7 @@ export class Pipeline {
 
   constructor(private readonly deps: PipelineDeps) {}
 
-  async createProject(input: { source: string; model?: ModelRef; target?: string }) {
+  async createProject(input: { source: string; model?: ModelRef; target?: string; language?: Locale }) {
     const probe = await probeProject(input.source, this.deps.exec)
     if (!probe.exists) throw new Error(`Folder not found: ${probe.path}`)
     const id = randomBytes(3).toString("hex")
@@ -75,6 +83,7 @@ export class Pipeline {
       createdAt: Date.now(),
       model: input.model,
       target: input.target && TARGETS[input.target] ? input.target : "go",
+      language: isLocale(input.language) ? input.language : "en",
       ports: { legacy, v2 },
     }
     await this.deps.store.put(record)
@@ -87,12 +96,13 @@ export class Pipeline {
     return project
   }
 
-  async updateProject(id: string, patch: { model?: ModelRef; target?: string }) {
+  async updateProject(id: string, patch: { model?: ModelRef; target?: string; language?: Locale }) {
     const project = await this.project(id)
     const next = {
       ...project,
       ...(patch.model ? { model: patch.model } : {}),
       ...(patch.target && TARGETS[patch.target] ? { target: patch.target } : {}),
+      ...(isLocale(patch.language) ? { language: patch.language } : {}),
     }
     await this.deps.store.put(next)
     return next
@@ -103,6 +113,25 @@ export class Pipeline {
     const state = await this.stateOf(project)
     const snapshot = await this.deps.store.snapshot(project, state)
     return { ...snapshot, activity: this.deps.bus.activity(id) }
+  }
+
+  /** Everything the agent and the pipeline did, oldest first — the material for a replay. */
+  async history(id: string): Promise<Activity[]> {
+    const project = await this.project(id)
+    await this.stateOf(project)
+    const byId = new Map((await this.deps.store.loadActivity(project)).map((a) => [a.id, a]))
+    for (const item of this.deps.bus.activity(id)) byId.set(item.id, item)
+    return [...byId.values()].sort((a, b) => a.at - b.at)
+  }
+
+  async migrations(): Promise<MigrationListItem[]> {
+    const records = await this.deps.store.list()
+    return Promise.all(
+      records.map(async (project) => {
+        const missing = !existsSync(project.workspace)
+        return { project, summary: summarize(missing ? undefined : await this.snapshot(project.id), missing) }
+      }),
+    )
   }
 
   /** Start a phase in the background. Returns why it cannot start, if it cannot. */
@@ -166,27 +195,46 @@ export class Pipeline {
     const onParentAbort = () => controller.abort()
     parent?.addEventListener("abort", onParentAbort)
     this.controllers.set(`${project.id}:${key}`, controller)
-    await this.setPhase(project, key, { status: "running", startedAt: Date.now(), finishedAt: undefined, error: undefined, note: undefined })
+    const startedAt = Date.now()
+    await this.setPhase(project, key, {
+      status: "running",
+      startedAt,
+      finishedAt: undefined,
+      error: undefined,
+      note: undefined,
+      noteMessage: undefined,
+    })
     try {
       const note = await this.execute(project, definition, batchId, controller.signal)
-      await this.setPhase(project, key, { status: "done", finishedAt: Date.now(), note })
+      await this.setPhase(project, key, { status: "done", finishedAt: Date.now(), note: note?.text, noteMessage: note?.message })
     } catch (error) {
-      const message = controller.signal.aborted ? "Stopped" : error instanceof Error ? error.message : String(error)
-      this.activity(project, key, { kind: "error", title: `${definition.title} failed`, detail: message })
-      await this.setPhase(project, key, { status: "failed", finishedAt: Date.now(), error: message })
+      const reason = controller.signal.aborted ? "Stopped" : error instanceof Error ? error.message : String(error)
+      this.activity(project, key, {
+        kind: "error",
+        title: `${definition.title} failed`,
+        message: msg("activity.phaseFailed", { phase: definition.name }),
+        detail: reason,
+      })
+      await this.setPhase(project, key, { status: "failed", finishedAt: Date.now(), error: reason })
       throw error
     } finally {
       parent?.removeEventListener("abort", onParentAbort)
       this.controllers.delete(`${project.id}:${key}`)
-      await writeJson(join(project.workspace, artifacts.activity), this.deps.bus.activity(project.id)).catch(() => {})
+      const items = this.deps.bus.activity(project.id).filter((a) => a.phase === key && a.at >= startedAt)
+      await this.deps.store.saveActivity(project, key, items).catch(() => {})
     }
   }
 
-  private async execute(project: ProjectRecord, definition: PhaseDefinition, batchId: string | undefined, signal: AbortSignal) {
+  private async execute(
+    project: ProjectRecord,
+    definition: PhaseDefinition,
+    batchId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Note | undefined> {
     const key = phaseKey(definition.name, batchId)
     let snapshot = await this.snapshot(project.id)
     const batch = this.batchOf(snapshot, batchId)
-    let note: string | undefined
+    let note: Note | undefined
 
     if (definition.prompt && definition.output && definition.parse) {
       const state = await this.stateOf(project)
@@ -200,11 +248,18 @@ export class Pipeline {
         parity: batchId ? snapshot.parity[batchId] : undefined,
         tests: batchId ? snapshot.tests[batchId] : undefined,
       }
-      this.activity(project, key, { kind: "system", title: `${definition.title}${batch ? ` · ${batch.title}` : ""}` })
+      const title = `${definition.title}${batch ? ` · ${batch.title}` : ""}`
+      this.activity(project, key, {
+        kind: "system",
+        title,
+        message: batch
+          ? msg("activity.phaseStartedBatch", { phase: definition.name, batch: batch.title })
+          : msg("activity.phaseStarted", { phase: definition.name }),
+      })
       const result = await this.deps.engine.run({
         directory: project.workspace,
         phase: key,
-        title: `${definition.title}${batch ? ` · ${batch.title}` : ""}`,
+        title,
         prompt: definition.prompt(promptContext),
         model: project.model,
         sessionId: state.sessions[sessionKey],
@@ -224,11 +279,11 @@ export class Pipeline {
       snapshot = await this.snapshot(project.id)
     }
 
-    const message = definition.commit(batch)
+    const commitMessage = definition.commit(batch)
     if (definition.after) {
-      await definition.after({ snapshot, batch, ops: this.ops(project, key, signal, message, (n) => (note = n)) })
+      await definition.after({ snapshot, batch, ops: this.ops(project, key, signal, commitMessage, (n) => (note = n)) })
     }
-    await this.commit(project, message)
+    await this.commit(project, commitMessage)
     return note
   }
 
@@ -237,7 +292,7 @@ export class Pipeline {
     key: string,
     signal: AbortSignal,
     commitMessage: string,
-    setNote: (note: string) => void,
+    setNote: (note: Note) => void,
   ): PhaseOps {
     return {
       verifyLegacy: async () => setNote(await this.verifyLegacy(project, key, signal)),
@@ -250,7 +305,14 @@ export class Pipeline {
       buildV2: (batch) => this.buildV2(project, batch, key, signal),
       runParity: async (batch) => {
         const run = await this.runParity(project.id, batch, signal)
-        setNote(run.error ?? `${run.matched}/${run.total} responses identical`)
+        setNote(
+          run.error
+            ? { text: run.error, message: msg("note.parityNoAnswer") }
+            : {
+                text: `${run.matched}/${run.total} responses identical`,
+                message: msg("note.parity", { matched: run.matched, total: run.total }),
+              },
+        )
       },
       runInline: async (phase, batch) => {
         // Commit this phase's work first so the child phase's commit stays its own.
@@ -260,39 +322,47 @@ export class Pipeline {
     }
   }
 
-  private async verifyLegacy(project: ProjectRecord, key: string, signal: AbortSignal) {
+  private async verifyLegacy(project: ProjectRecord, key: string, signal: AbortSignal): Promise<Note> {
     const snapshot = await this.snapshot(project.id)
     const composer = await this.composer(project)
     if (!composer) {
       await this.setRuntime(project, { legacy: "failed", message: "No container runtime available" })
-      return "No container runtime available — legacy cannot be started"
+      return { text: "No container runtime available — legacy cannot be started", message: msg("note.noRuntime") }
     }
+    const running: Note = { text: "Legacy is running", message: msg("note.legacyRunning") }
     return this.lock(`${project.id}:runtime`, async () => {
       await this.setRuntime(project, { legacy: "starting" })
       const url = `http://127.0.0.1:${project.ports.legacy}`
       const health = snapshot.discovery?.run.healthPath || "/"
+      const answers = () =>
+        this.activity(project, key, { kind: "success", title: `Legacy answers on ${url}`, message: msg("activity.legacyAnswers", { url }) })
       if (await waitForHttp(url, health, 5_000)) {
         await this.setRuntime(project, { legacy: "up" })
-        this.activity(project, key, { kind: "success", title: `Legacy answers on ${url}` })
-        return "Legacy is running"
+        answers()
+        return running
       }
       if (signal.aborted) throw new Error("Stopped")
-      this.activity(project, key, { kind: "system", title: "Starting legacy containers" })
+      this.activity(project, key, { kind: "system", title: "Starting legacy containers", message: msg("activity.startingLegacy") })
       const up = await composer.up(["legacy"], { onOutput: this.streamOutput(project, key, "compose-legacy") })
       const alive = up.ok && (await waitForHttp(url, health, this.deps.bootTimeoutMs ?? 180_000))
       if (!alive) {
         const logs = await composer.logs("legacy").catch(() => "")
         await this.setRuntime(project, { legacy: "failed", message: tail(logs || up.output) })
-        this.activity(project, key, { kind: "error", title: "Legacy did not answer over HTTP", detail: tail(logs || up.output) })
-        return "Legacy could not be started"
+        this.activity(project, key, {
+          kind: "error",
+          title: "Legacy did not answer over HTTP",
+          message: msg("activity.legacyNoAnswer"),
+          detail: tail(logs || up.output),
+        })
+        return { text: "Legacy could not be started", message: msg("note.legacyFailed") }
       }
       await this.setRuntime(project, { legacy: "up" })
-      this.activity(project, key, { kind: "success", title: `Legacy answers on ${url}` })
-      return "Legacy is running"
+      answers()
+      return running
     })
   }
 
-  private async runLegacyTests(project: ProjectRecord, batchId: string, key: string, signal: AbortSignal) {
+  private async runLegacyTests(project: ProjectRecord, batchId: string, key: string, signal: AbortSignal): Promise<Note> {
     const snapshot = await this.snapshot(project.id)
     const tests = snapshot.tests[batchId]
     if (!tests) throw new Error("No characterization tests for this batch")
@@ -300,7 +370,11 @@ export class Pipeline {
     const composer = await this.composer(project)
     const run = await this.lock(`${project.id}:runtime`, async () => {
       if (composer) {
-        this.activity(project, key, { kind: "system", title: "Resetting legacy to freshly seeded state" })
+        this.activity(project, key, {
+          kind: "system",
+          title: "Resetting legacy to freshly seeded state",
+          message: msg("activity.resetLegacy"),
+        })
         await composer.down({ volumes: true })
         await this.setRuntime(project, { legacy: "starting", v2: "down" })
         await composer.up(["legacy"], { build: false, onOutput: this.streamOutput(project, key, "compose-reset") })
@@ -314,10 +388,14 @@ export class Pipeline {
         const response = await sendRequest(baseUrl, testCase.request, { timeoutMs: this.deps.httpTimeoutMs })
         const expectation = compareExpectation(testCase.expect, response, testCase.ignore)
         results.push({ caseId: testCase.id, response, expectation })
+        const { method, path } = testCase.request
         this.activity(project, key, {
           id: `legacy-${batchId}-${testCase.id}`,
           kind: response.error ? "error" : "bash",
-          title: `${testCase.request.method} ${testCase.request.path} → ${response.error ? "no response" : response.status}`,
+          title: `${method} ${path} → ${response.error ? "no response" : response.status}`,
+          message: response.error
+            ? msg("activity.requestNoResponse", { method, path })
+            : msg("activity.request", { method, path, status: response.status }),
           detail: testCase.title,
         })
       }
@@ -325,13 +403,18 @@ export class Pipeline {
     })
     await writeJson(join(project.workspace, artifacts.batch(batchId, "legacy-run")), run)
     this.changed(project, artifacts.batch(batchId, "legacy-run"))
-    if (run.error) return run.error
+    if (run.error) return { text: run.error, message: msg("note.legacyNoAnswer") }
     const agreed = run.results.filter((r) => r.expectation.match).length
+    const total = run.results.length
     this.activity(project, key, {
       kind: "success",
-      title: `Legacy recorded ${run.results.length} responses · ${agreed} matched the predicted behavior`,
+      title: `Legacy recorded ${total} responses · ${agreed} matched the predicted behavior`,
+      message: msg("activity.legacyRecorded", { total, agreed }),
     })
-    return `${agreed}/${run.results.length} responses matched the predicted behavior`
+    return {
+      text: `${agreed}/${total} responses matched the predicted behavior`,
+      message: msg("note.legacyMatched", { agreed, total }),
+    }
   }
 
   private async buildV2(project: ProjectRecord, batchId: string, key: string, signal: AbortSignal) {
@@ -345,15 +428,18 @@ export class Pipeline {
           ["go test", ["test", "./..."]],
         ] as const) {
           if (signal.aborted) throw new Error("Stopped")
-          this.activity(project, key, { id: `build-${batchId}-${name}`, kind: "bash", title: name, status: "running" })
+          const id = `build-${batchId}-${name}`
+          this.activity(project, key, { id, kind: "bash", title: name, message: msg("activity.buildStepRunning", { name }), status: "running" })
           const result = await this.deps.exec("go", [...args], { cwd: v2, timeoutMs: 10 * 60_000 })
-          steps.push({ name, ok: result.code === 0, output: tail(output(result)) })
+          const ok = result.code === 0
+          steps.push({ name, ok, output: tail(output(result)) })
           this.activity(project, key, {
-            id: `build-${batchId}-${name}`,
-            kind: result.code === 0 ? "success" : "error",
-            title: `${name} ${result.code === 0 ? "passed" : "failed"}`,
+            id,
+            kind: ok ? "success" : "error",
+            title: `${name} ${ok ? "passed" : "failed"}`,
+            message: msg(ok ? "activity.buildStepPassed" : "activity.buildStepFailed", { name }),
             detail: tail(output(result), 1500),
-            status: result.code === 0 ? "done" : "error",
+            status: ok ? "done" : "error",
           })
         }
       } else steps.push({ name: "go build", ok: true, skipped: true, output: "Go is not installed locally; building in a container" })
@@ -362,7 +448,7 @@ export class Pipeline {
     const composer = await this.composer(project)
     if (composer) {
       await this.lock(`${project.id}:runtime`, async () => {
-        this.activity(project, key, { kind: "system", title: "Building and starting v2" })
+        this.activity(project, key, { kind: "system", title: "Building and starting v2", message: msg("activity.buildingV2") })
         await this.setRuntime(project, { v2: "starting" })
         const up = await composer.up(["v2"], { onOutput: this.streamOutput(project, key, "compose-v2") })
         steps.push({ name: "container build", ok: up.ok, output: tail(up.output) })
@@ -381,6 +467,7 @@ export class Pipeline {
     this.activity(project, key, {
       kind: report.ok ? "success" : "error",
       title: report.ok ? "v2 built and running" : "v2 build has problems",
+      message: msg(report.ok ? "activity.v2Running" : "activity.v2Problems"),
     })
     return running
   }
@@ -394,16 +481,21 @@ export class Pipeline {
     const composer = await this.composer(project)
     const legacyUrl = `http://127.0.0.1:${project.ports.legacy}`
     const v2Url = `http://127.0.0.1:${project.ports.v2}`
+    const health = snapshot.discovery?.run.healthPath || "/"
     const run = await this.lock(`${id}:runtime`, async () => {
       if (composer) {
-        this.activity(project, key, { kind: "system", title: "Resetting legacy and v2 to freshly seeded state" })
+        this.activity(project, key, {
+          kind: "system",
+          title: "Resetting legacy and v2 to freshly seeded state",
+          message: msg("activity.resetBoth"),
+        })
         await composer.down({ volumes: true })
         await this.setRuntime(project, { legacy: "starting", v2: "starting" })
         await composer.up(["legacy", "v2"], { build: false, onOutput: this.streamOutput(project, key, "compose-parity") })
       }
       const [legacyAlive, v2Alive] = await Promise.all([
-        waitForHttp(legacyUrl, snapshot.discovery?.run.healthPath || "/", this.deps.bootTimeoutMs ?? 180_000),
-        waitForHttp(v2Url, snapshot.discovery?.run.healthPath || "/", this.deps.bootTimeoutMs ?? 180_000),
+        waitForHttp(legacyUrl, health, this.deps.bootTimeoutMs ?? 180_000),
+        waitForHttp(v2Url, health, this.deps.bootTimeoutMs ?? 180_000),
       ])
       await this.setRuntime(project, { legacy: legacyAlive ? "up" : "failed", v2: v2Alive ? "up" : "failed" })
       const results = []
@@ -417,6 +509,7 @@ export class Pipeline {
           id: `parity-${batchId}-${testCase.id}`,
           kind: comparison.match ? "success" : "error",
           title: `${comparison.match ? "Identical" : "Different"} · ${testCase.title}`,
+          message: msg(comparison.match ? "activity.parityIdentical" : "activity.parityDifferent", { title: testCase.title }),
         })
       }
       const matched = results.filter((r) => r.comparison.match).length
@@ -444,14 +537,12 @@ export class Pipeline {
     const cached = this.states.get(project.id)
     if (cached) return cached
     const state = await this.deps.store.loadState(project)
-    const activity = await readJson(join(project.workspace, artifacts.activity))
+    const activity = await this.deps.store.loadActivity(project)
     // Nothing is running right after a restart, so replayed items cannot still be in progress.
-    if (Array.isArray(activity)) {
-      this.deps.bus.seed(
-        project.id,
-        (activity as Activity[]).map((a) => (a.status === "running" ? { ...a, status: "done" as const } : a)),
-      )
-    }
+    this.deps.bus.seed(
+      project.id,
+      activity.map((a) => (a.status === "running" ? { ...a, status: "done" as const } : a)),
+    )
     this.states.set(project.id, state)
     return state
   }
@@ -472,11 +563,10 @@ export class Pipeline {
 
   private async checkRuntime(project: ProjectRecord, snapshot: ProjectSnapshot, services: string[]) {
     const timeout = this.deps.bootTimeoutMs ?? 180_000
+    const health = snapshot.discovery?.run.healthPath || "/"
     const [legacy, v2] = await Promise.all([
-      waitForHttp(`http://127.0.0.1:${project.ports.legacy}`, snapshot.discovery?.run.healthPath || "/", timeout),
-      services.includes("v2")
-        ? waitForHttp(`http://127.0.0.1:${project.ports.v2}`, snapshot.discovery?.run.healthPath || "/", timeout)
-        : Promise.resolve(false),
+      waitForHttp(`http://127.0.0.1:${project.ports.legacy}`, health, timeout),
+      services.includes("v2") ? waitForHttp(`http://127.0.0.1:${project.ports.v2}`, health, timeout) : Promise.resolve(false),
     ])
     await this.setRuntime(project, {
       legacy: legacy ? "up" : "failed",
@@ -527,6 +617,37 @@ export class Pipeline {
     const next = previous.catch(() => {}).then(fn)
     this.locks.set(key, next)
     return next
+  }
+}
+
+/** Headline numbers for the migrations library. */
+export function summarize(snapshot: ProjectSnapshot | undefined, missing: boolean): MigrationSummary {
+  const empty = { missing, running: false, steps: 0, batches: 0, batchesProven: 0, entrypoints: 0, rules: 0, cases: 0, matched: 0, compared: 0 }
+  if (!snapshot) return empty
+  const batches = snapshot.entrypoints?.batches ?? []
+  const parity = Object.values(snapshot.parity)
+  const perBatch = batches.reduce(
+    (n, b) =>
+      n + [snapshot.rules[b.id], snapshot.tests[b.id], snapshot.legacyRuns[b.id], snapshot.ports[b.id], snapshot.parity[b.id]].filter(Boolean).length,
+    0,
+  )
+  const phases = Object.values(snapshot.state.phases)
+  const times = phases.flatMap((p) => [p.startedAt, p.finishedAt]).filter((t): t is number => typeof t === "number")
+  return {
+    ...empty,
+    running: phases.some((p) => p.status === "running"),
+    steps: [snapshot.discovery, snapshot.entrypoints, snapshot.environment].filter(Boolean).length + perBatch,
+    batches: batches.length,
+    batchesProven: batches.filter((b) => {
+      const run = snapshot.parity[b.id]
+      return Boolean(run && run.total > 0 && run.matched === run.total)
+    }).length,
+    entrypoints: snapshot.entrypoints?.entrypoints.length ?? 0,
+    rules: Object.values(snapshot.rules).reduce((n, r) => n + r.entrypoints.reduce((m, e) => m + e.rules.length, 0), 0),
+    cases: Object.values(snapshot.tests).reduce((n, t) => n + t.cases.length, 0),
+    matched: parity.reduce((n, p) => n + p.matched, 0),
+    compared: parity.reduce((n, p) => n + p.total, 0),
+    lastActivity: times.length ? Math.max(...times) : undefined,
   }
 }
 

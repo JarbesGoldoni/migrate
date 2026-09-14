@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
+import { msg } from "../../shared/messages"
 import type { EngineInfo, ModelOption, ModelRef } from "../../shared/types"
 import { engineDir } from "../paths"
 import { freePort } from "../util/ports"
@@ -117,6 +118,7 @@ export class OpencodeEngine implements Engine {
           phase: options.phase,
           kind: "system",
           title: `Provider busy, retrying (attempt ${props.status.attempt})`,
+          message: msg("activity.providerRetry", { attempt: props.status.attempt }),
           detail: props.status.message,
         })
       }
