@@ -1,6 +1,6 @@
 {
   "name": "simplify-migrate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch AI migrate your legacy app to a modern stack, and prove it still behaves the same.",
   "keywords": [
     "migration",
@@ -11,7 +11,15 @@
     "parity",
     "go"
   ],
-  "license": "UNLICENSED",
+  "homepage": "https://github.com/JarbesGoldoni/migrate#readme",
+  "bugs": {
+    "url": "https://github.com/JarbesGoldoni/migrate/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JarbesGoldoni/migrate.git"
+  },
+  "license": "MIT",
   "author": "Jarbes Goldoni",
   "type": "module",
   "bin": {
@@ -20,7 +28,8 @@
   "files": [
     "dist",
     "sample",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"

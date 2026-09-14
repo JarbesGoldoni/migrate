@@ -2,6 +2,8 @@
 
 **Watch AI migrate a legacy app to a modern stack — and prove it still behaves the same.**
 
+[![CI](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml/badge.svg)](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml) [![npm](https://img.shields.io/npm/v/simplify-migrate)](https://www.npmjs.com/package/simplify-migrate)
+
 Point it at an application. It maps the architecture, suggests where to migrate, finds every entry point, extracts the business rules, writes tests against the real legacy app, ports the code and runs both side by side until every response matches.
 
 ## How it works
@@ -56,3 +58,7 @@ bun run dev            # API on :4800, UI with hot reload on :5180
 bun test --coverage    # fails below 80% line or function coverage per file
 bun run typecheck
 ```
+
+## License
+
+[MIT](LICENSE)
