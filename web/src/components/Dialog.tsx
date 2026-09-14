@@ -1,6 +1,7 @@
 import { X } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { type ReactNode, useEffect } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "../lib/format"
 
 export function Dialog({
@@ -27,7 +28,8 @@ export function Dialog({
     return () => window.removeEventListener("keydown", onKey)
   }, [open, onClose])
 
-  return (
+  // Rendered into <body>: an animated (transformed) ancestor would otherwise trap the fixed overlay inside it.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
@@ -62,6 +64,7 @@ export function Dialog({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
