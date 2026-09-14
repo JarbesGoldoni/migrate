@@ -146,8 +146,9 @@ describe("Pipeline", () => {
     await pipeline.start(project.id, "verify", "catalog")
     snapshot = await waitPhase(pipeline, project.id, "verify:catalog")
     expect(snapshot.verify.catalog.fixes[0]).toMatchObject({ case: "wrong", action: "expectation" })
+    expect(snapshot.verify.catalog.pruned).toEqual([])
     expect(snapshot.state.phases["legacy:catalog"].note).toBe("4/4 responses matched the predicted behavior")
-    expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Every legacy response already matches the prediction")
+    expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Every legacy response already matches the prediction and no test repeats another")
 
     const chosen = await pipeline.updateProject(project.id, { stack: { language: "go", stack: "chi" } })
     expect(chosen).toMatchObject({ target: "go", stack: { stack: "chi", name: "chi", version: "1.23" } })

@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   ChevronDown,
   CircleCheck,
+  CopyMinus,
   CircleDashed,
   CircleX,
   Container,
@@ -36,6 +37,7 @@ import { curlFor } from "../lib/curl"
 import { cn, statusTone } from "../lib/format"
 import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
+import { redundantCases } from "../../../src/shared/contracts"
 import { BATCH_STEPS, batchProgress, hasOutput, nextBatchPhase, phaseStatus } from "../lib/pipeline"
 import { useReplayView } from "../lib/project"
 import { serverText } from "../lib/server-text"
@@ -43,7 +45,7 @@ import { RichText } from "../components/RichText"
 import { navigate } from "../lib/router"
 import { batchIcon, RULE_KINDS } from "../lib/tech"
 import { Callout, Label, PhaseAction, Working } from "./common"
-import { FixList } from "./FixList"
+import { FixList, PrunedList } from "./FixList"
 
 type TabId = "rules" | "tests" | "port" | "parity" | "playground"
 
@@ -503,7 +505,8 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
   const mismatched = run && !run.error ? run.results.length - predicted : 0
   const verifying = phaseStatus(snapshot, "verify", batchId) === "running"
   const verify = snapshot.verify?.[batchId]
-  const fixLabel = t("tests.fix", { count: mismatched })
+  const repeated = run && !run.error ? redundantCases(tests).reduce((n, ids) => n + ids.length - 1, 0) : 0
+  const fixLabel = mismatched > 0 ? t("tests.fix", { count: mismatched }) : t("tests.clean", { count: repeated })
 
   return (
     <div className="flex flex-col gap-5">
@@ -526,9 +529,14 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
             {t("tests.score", { agreed: predicted, total: run.results.length })}
           </Badge>
         )}
+        {repeated > 0 && !verifying && (
+          <Badge tone="amber" icon={CopyMinus}>
+            {t("tests.repeated", { count: repeated })}
+          </Badge>
+        )}
         <div className="min-w-0 flex-1 text-sm text-slate-400">{run ? t("tests.truth") : t("tests.notRun")}</div>
         <PhaseAction snapshot={snapshot} phase="legacy" batch={batchId} label={t("tests.runLegacy")} rerunLabel={t("tests.replayLegacy")} />
-        {(mismatched > 0 || verifying) && (
+        {(mismatched > 0 || repeated > 0 || verifying) && (
           <PhaseAction snapshot={snapshot} phase="verify" batch={batchId} label={fixLabel} rerunLabel={fixLabel} forceVariant="primary" />
         )}
       </div>
@@ -536,7 +544,7 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
       {verifying && (
         <div className="flex items-center gap-2 text-sm">
           <Spinner className="text-violet-300" />
-          <span className="shimmer-text">{t("tests.fixing")}</span>
+          <span className="shimmer-text">{t(mismatched > 0 ? "tests.fixing" : "tests.cleaning")}</span>
         </div>
       )}
 
@@ -556,6 +564,8 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
           <CaseRow key={testCase.id} testCase={testCase} result={results.get(testCase.id)} index={i} baseUrl={`http://127.0.0.1:${snapshot.project.ports.legacy}`} />
         ))}
       </div>
+
+      {verify && verify.pruned.length > 0 && <PrunedList pruned={verify.pruned} tests={tests} />}
     </div>
   )
 }

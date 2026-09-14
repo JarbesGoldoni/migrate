@@ -1,7 +1,7 @@
-import { ChevronDown, FileCode2, Info, ShieldCheck, Wrench } from "lucide-react"
+import { ChevronDown, CopyMinus, FileCode2, Info, ShieldCheck, Wrench } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useState } from "react"
-import type { Localized, Tests } from "../../../src/shared/contracts"
+import type { Localized, Tests, Verify } from "../../../src/shared/contracts"
 import { RichText } from "../components/RichText"
 import { Badge, MethodBadge, Panel } from "../components/ui"
 import { cn } from "../lib/format"
@@ -152,5 +152,59 @@ function FixCard({ fix, index, title, method, projectId }: { fix: Fix; index: nu
         )}
       </AnimatePresence>
     </motion.div>
+  )
+}
+
+/** Tests the agent deleted because another test already proved the same thing; closed until asked for. */
+export function PrunedList({ pruned, tests }: { pruned: Verify["pruned"]; tests?: Tests }) {
+  const { t, l } = useI18n()
+  const [open, setOpen] = useState(false)
+  const cases = new Map(tests?.cases.map((c) => [c.id, c]))
+  return (
+    <div className="overflow-hidden rounded-xl bg-white/[0.02] ring-1 ring-white/[0.06]">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02]"
+      >
+        <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-400/10 ring-1 ring-white/10">
+          <CopyMinus className="size-4 text-slate-300" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-200">{t("pruned.title", { count: pruned.length })}</div>
+          <div className="text-xs text-slate-500">{t("pruned.hint")}</div>
+        </div>
+        <ChevronDown className={cn("size-4 shrink-0 text-slate-500 transition", open && "rotate-180")} />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="overflow-hidden">
+            <ul className="flex flex-col divide-y divide-white/5 border-t border-white/5">
+              {pruned.map((item) => {
+                const kept = cases.get(item.duplicateOf)
+                return (
+                  <li key={item.case} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      {item.method && <MethodBadge method={item.method} className="w-auto px-1.5" />}
+                      <span className="text-slate-300">{l(item.title) || item.case}</span>
+                      <span className="font-mono text-[10px] text-slate-600">{item.path}</span>
+                    </div>
+                    {item.duplicateOf && (
+                      <div className="mt-1 text-xs text-slate-500">{t("pruned.sameAs", { case: kept ? l(kept.title) : item.duplicateOf })}</div>
+                    )}
+                    {l(item.reason) && (
+                      <p className="mt-1.5 text-sm text-slate-300">
+                        <RichText text={l(item.reason)} />
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }

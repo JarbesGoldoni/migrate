@@ -9,7 +9,6 @@ import {
   Copy,
   Dot,
   ListOrdered,
-  LoaderCircle,
   type LucideIcon,
   Radio,
   Terminal,
@@ -63,7 +62,7 @@ export function Button({
       )}
       {...props}
     >
-      {loading ? <LoaderCircle className="size-4 animate-spin" /> : icon}
+      {loading ? <Spinner /> : icon}
       {children}
     </button>
   )
@@ -118,7 +117,7 @@ export function StatusIcon({ status, className }: { status: PhaseStatus; classNa
     return (
       <span className={cn("relative grid size-5 place-items-center", className)}>
         <span className="absolute inset-0 animate-ping-slow rounded-full bg-cyan-400/30" />
-        <LoaderCircle className="size-full animate-spin text-cyan-300" />
+        <Spinner className="size-full text-cyan-300" />
       </span>
     )
   }
@@ -350,6 +349,12 @@ export function ProgressRing({
   )
 }
 
+/** A faint ring with an arc turning around it: symmetric, and on its own layer, so it spins in place. */
 export function Spinner({ className }: { className?: string }) {
-  return <LoaderCircle className={cn("size-4 animate-spin", className)} />
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={cn("size-4 shrink-0 animate-spin will-change-transform", className)}>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2.5" />
+      <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  )
 }

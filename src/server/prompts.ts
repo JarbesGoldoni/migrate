@@ -1,4 +1,4 @@
-import type { Batch, Discovery, EntryPoints, Localized } from "../shared/contracts"
+import { type Batch, type Discovery, type EntryPoints, type Localized, redundantCases } from "../shared/contracts"
 import { defaultStack, LANGUAGES, languageById, type StackChoice, stackOf } from "../shared/stacks"
 import type { LegacyRun, ParityRun, ProjectRecord } from "../shared/types"
 import { artifacts } from "./store"
@@ -11,7 +11,7 @@ export type PromptContext = {
   batch?: Batch
   parity?: ParityRun
   legacyRun?: LegacyRun
-  tests?: { cases: Array<{ id: string; request: unknown; expect?: unknown }> }
+  tests?: { cases: Array<{ id: string; title?: Localized; request: unknown; expect?: unknown; ignore?: unknown }> }
 }
 
 const CAPTURE_HINT =
@@ -472,6 +472,7 @@ Context: ${artifacts.batch(batch.id, "rules")} (the rules you extracted) and mig
 Task: write characterization tests for batch "${batch.title.en}" at the entry-point boundary — real HTTP requests in, expected responses out. Not unit tests.
 - As many cases as the code has branches: every decision row in rules.json is exercised by at least one case — happy paths, each validation failure, not found, authorization failures, boundary values.
 - Requests run against the legacy app started with the seeded dependencies from migration/env, in the listed order, starting from freshly seeded state. Use ids and values that exist in the seeds; when a case needs data, create it in an earlier case.
+- Every case proves something no other case does. Two cases never send the same request from the same state expecting the same answer. A condition the replay cannot create — a dependency being down, a slow network — is not a case of its own when its request and answer are those of the healthy case.
 - Only HTTP entry points can be tested this way; skip the others.
 - "expect.body" is what the legacy code returns, predicted from the code. "match": "exact" when the whole body is deterministic, "subset" to assert only stable fields, "status" when only the status matters. List volatile paths such as generated ids and timestamps in "ignore" (JSONPath like "$.id" or "$.items[].createdAt").
 - "branch" names the decision row id the case exercises.
@@ -591,6 +592,9 @@ legacy: ${r.response.error ? `error ${r.response.error}` : `${r.response.status}
 differences: ${clipJson(r.expectation.diffs.slice(0, 12))}`,
     )
     .join("\n\n")
+  const duplicates = redundantCases(ctx.tests)
+    .map((ids) => `- ${ids.map((id) => `${id} ("${cases.get(id)?.title?.en ?? ""}")`).join(", ")}`)
+    .join("\n")
   const example = {
     batch: "scheduling",
     fixes: [
@@ -617,20 +621,38 @@ differences: ${clipJson(r.expectation.diffs.slice(0, 12))}`,
         change: tr("Expects `404 slot_not_found`.", "Espera `404 slot_not_found`.", "Espera `404 slot_not_found`."),
       },
     ],
+    pruned: [
+      {
+        case: "book-ok-cache-down",
+        duplicateOf: "book-ok",
+        reason: tr(
+          "It sends the same booking as `book-ok` and expects the same `201`; the replay keeps the cache up, so it proved nothing new.",
+          "Envia a mesma reserva que `book-ok` e espera o mesmo `201`; o replay mantém o cache no ar, então não provava nada novo.",
+          "Envía la misma reserva que `book-ok` y espera el mismo `201`; la repetición mantiene la caché activa, así que no probaba nada nuevo.",
+        ),
+      },
+    ],
     notes: [],
   }
   return `${preamble(ctx, output)}
 
-Task: ${testsFile} was replayed against the real legacy app, freshly seeded, and ${mismatched.length} of ${run.results.length} cases answered differently from the prediction. Legacy is the source of truth; the goal is a suite that describes what legacy really does while still exercising each rule. For each mismatch read the request, the legacy code path and the seeds in migration/env, find out why, then adapt ${testsFile} in place:
+Task: ${testsFile} was replayed against the real legacy app, freshly seeded, and ${mismatched.length ? `${mismatched.length} of ${run.results.length} cases answered differently from the prediction` : `all ${run.results.length} cases answered as predicted`}. Legacy is the source of truth; the goal is a suite that describes what legacy really does and proves each rule without repeating itself. Adapt ${testsFile} in place, in two steps.
+
+1. Fix the mismatches. For each one read the request, the legacy code path and the seeds in migration/env, find out why, then:
 - A broken request (wrong id, missing header or field, a value that must come from an earlier response) → fix the request. To reuse a value, ${CAPTURE_HINT}.
 - Missing setup or a wrong order → add or move a setup case before it.
 - A wrong prediction → set "expect" to what legacy really answers and list volatile fields in "ignore".
 - Only when a case cannot be made deterministic against legacy, remove it — the very last option.
-Keep cases that already match unchanged and keep ids stable. Do not change legacy code, its services or seeds, and do not start containers — the pipeline replays the suite against legacy right after you finish.
+Keep ids stable.
 
-${listing}
+${listing || "No case answered differently."}
 
-Record every change below; "action" is one of request, setup, expectation, removed. ${EXPLAIN_FIXES}
+2. Remove redundant cases. A case is redundant when another case already sends the same request from the same state and expects the same answer, or when it proves nothing another case does not — for example it describes a condition the replay cannot create, such as a dependency being down, while sending the healthy case's request and expecting its answer. Keep the case whose title says it best. Never remove a case that another case captures a value from, a setup case a later case needs, or the only case of a decision row.
+${duplicates ? `These cases send identical requests and expect identical answers:\n${duplicates}` : "No two cases are identical, but look for cases that prove the same thing."}
+
+Do not change legacy code, its services or seeds, and do not start containers — the pipeline replays the suite against legacy right after you finish.
+
+Record every fix in "fixes"; "action" is one of request, setup, expectation, removed. Record every redundant case you removed in "pruned" instead: "case" is its id, "duplicateOf" the id of the case that already proves it, and "reason" one plain sentence on why it added nothing. ${EXPLAIN_FIXES}
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`

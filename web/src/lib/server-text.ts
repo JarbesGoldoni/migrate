@@ -12,6 +12,7 @@ const EXACT: Record<string, Key> = {
   "Run the tests against legacy first": "server.legacyFirst",
   "Run the tests against legacy before building v2": "server.legacyFirst",
   "Every legacy response already matches the prediction": "server.allPredicted",
+  "Every legacy response already matches the prediction and no test repeats another": "server.allPredicted",
   "Choose where to migrate first": "server.targetFirst",
   "Port the batch first": "server.portFirst",
   "Run parity first": "server.parityFirst",

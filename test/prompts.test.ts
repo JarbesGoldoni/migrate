@@ -170,5 +170,26 @@ describe("prompts", () => {
     expect(prompt).toContain("{{<earlier case id>.$.")
     expect(prompt).toContain('"migration/batches/catalog/verify.json"')
     expect(prompt).toContain("**double asterisks**")
+    expect(prompt).toContain("No two cases are identical")
+  })
+
+  test("verify prompt lists identical cases and asks for pruned removals even when everything matched", () => {
+    const ok = { status: 200, body: { status: "ok" }, headers: {}, text: "", durationMs: 1 }
+    const probe = { request: { method: "GET", path: "/health" }, expect: { status: 200, body: { status: "ok" }, match: "exact" } }
+    const prompt = verifyPrompt({
+      ...ctx,
+      tests: { cases: [{ id: "h1", title: { en: "Health", "pt-BR": "Saúde", es: "Salud" }, ...probe }, { id: "h2", title: { en: "Cache down", "pt-BR": "Cache fora", es: "Caché caída" }, ...probe }] },
+      legacyRun: {
+        batch: "catalog",
+        at: 1,
+        baseUrl: "",
+        results: ["h1", "h2"].map((caseId) => ({ caseId, response: ok, expectation: { match: true, diffs: [] } })),
+      },
+    })
+    expect(prompt).toContain("all 2 cases answered as predicted")
+    expect(prompt).toContain("No case answered differently.")
+    expect(prompt).toContain('- h1 ("Health"), h2 ("Cache down")')
+    expect(prompt).toContain('"pruned": [')
+    expect(testsPrompt(ctx)).toContain("Two cases never send the same request")
   })
 })

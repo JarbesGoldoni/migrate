@@ -334,7 +334,9 @@ export class Pipeline {
       if (raw === undefined) {
         throw new Error(result.error ? `The agent stopped: ${result.error}` : `The agent finished without writing ${output}`)
       }
-      await writeJson(join(project.workspace, output), definition.parse(raw))
+      const parsed = definition.parse(raw)
+      const value = definition.complete ? definition.complete(parsed, snapshot, await this.snapshot(project.id), batch) : parsed
+      await writeJson(join(project.workspace, output), value)
       this.changed(project, output)
       snapshot = await this.snapshot(project.id)
     }

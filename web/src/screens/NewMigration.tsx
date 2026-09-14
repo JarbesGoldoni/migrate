@@ -14,7 +14,6 @@ import {
   GitCompareArrows,
   House,
   Layers,
-  LoaderCircle,
   type LucideIcon,
   Network,
   ShieldCheck,
@@ -31,7 +30,7 @@ import { Backdrop, Logo, TechIcon } from "../components/brand"
 import { EffortPicker } from "../components/EffortPicker"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { ModelPicker } from "../components/ModelPicker"
-import { Button, Panel } from "../components/ui"
+import { Button, Panel, Spinner } from "../components/ui"
 import { api } from "../lib/api"
 import { cn } from "../lib/format"
 import { useI18n } from "../lib/i18n"
@@ -255,7 +254,7 @@ export function NewMigration({ sample }: { sample: boolean }) {
                     {checking && !preflight
                       ? CHECK_IDS.map((id) => (
                           <li key={id} className="flex items-center gap-3 text-sm text-slate-400">
-                            <LoaderCircle className="size-4 animate-spin text-cyan-300" />
+                            <Spinner className="text-cyan-300" />
                             <span className="shimmer-text">{t(`check.${id}` as Key)}</span>
                           </li>
                         ))
@@ -294,7 +293,7 @@ export function NewMigration({ sample }: { sample: boolean }) {
                           </>
                         ) : (
                           <>
-                            <LoaderCircle className="size-4 animate-spin text-violet-300" />
+                            <Spinner className="text-violet-300" />
                             <span className="shimmer-text">{t("new.startingEngine")}</span>
                           </>
                         )}
@@ -348,7 +347,7 @@ export function NewMigration({ sample }: { sample: boolean }) {
                 <div className="flex items-center gap-2 text-sm">
                   {checking || !preflight ? (
                     <>
-                      <LoaderCircle className="size-4 animate-spin text-cyan-300" />
+                      <Spinner className="text-cyan-300" />
                       <span className="shimmer-text">{t("new.checking")}</span>
                     </>
                   ) : failing > 0 ? (

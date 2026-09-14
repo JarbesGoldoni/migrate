@@ -9,7 +9,6 @@ import {
   GitCompareArrows,
   History,
   Layers,
-  LoaderCircle,
   type LucideIcon,
   Network,
   PanelRightClose,
@@ -33,7 +32,7 @@ import { ModelPicker } from "../components/ModelPicker"
 import { ReplayBar, ReplayFinished } from "../components/ReplayBar"
 import { StackLabel, stackTitle } from "../components/stack"
 import { WorkspaceActions } from "../components/WorkspaceActions"
-import { Badge, Button, CountUp, StatusIcon } from "../components/ui"
+import { Badge, Button, CountUp, Spinner, StatusIcon } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
 import { cn } from "../lib/format"
 import { useI18n } from "../lib/i18n"
@@ -323,7 +322,7 @@ function TopBar({
       />
       {replayLoading && (
         <div className="absolute top-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink-850/95 px-4 py-2 text-sm ring-1 ring-white/10">
-          <LoaderCircle className="size-4 animate-spin text-rose-300" />
+          <Spinner className="text-rose-300" />
           <span className="shimmer-text">{t("replay.preparing")}</span>
         </div>
       )}

@@ -14,6 +14,8 @@ import {
   localized,
   mapLocalized,
   parseVerify,
+  redundantCases,
+  settlePruned,
   prose,
   proseList,
   slug,
@@ -34,6 +36,28 @@ describe("localized text", () => {
     expect(prose().parse(undefined)).toEqual(same(""))
     expect(proseList().parse(["a", "", { en: "b" }])).toEqual([same("a"), same("b")])
     expect(mapLocalized({ en: "abc", "pt-BR": "defg", es: "hi" }, (s) => s.slice(0, 2))).toEqual({ en: "ab", "pt-BR": "de", es: "hi" })
+  })
+
+  test("redundantCases groups identical requests that expect identical answers", () => {
+    const tests = parseTests({
+      cases: [
+        { id: "a", request: { method: "get", path: "/health", headers: { x: "1", y: "2" } }, expect: { status: 200, body: { status: "ok" }, match: "exact" } },
+        { id: "b", request: { method: "GET", path: "health", headers: { y: "2", x: "1" } }, expect: { status: 200, body: { status: "ok" }, match: "exact" } },
+        { id: "c", request: { method: "GET", path: "/health" }, expect: { status: 503 } },
+      ],
+    })
+    expect(redundantCases(tests)).toEqual([["a", "b"]])
+    expect(redundantCases(undefined)).toEqual([])
+  })
+
+  test("settlePruned keeps removals that left the suite, described as they were", () => {
+    const before = parseTests({ cases: [{ id: "a", title: "Health", request: { path: "/health" } }, { id: "b", title: "Health again", request: { method: "POST", path: "/health" } }] })
+    const after = parseTests({ cases: [{ id: "a", title: "Health", request: { path: "/health" } }] })
+    const verify = parseVerify({ pruned: [{ case: "b", duplicateOf: "a", reason: "same" }, { case: "a", duplicateOf: "b" }, { case: "ghost" }, { reason: "no id" }] })
+    expect(verify.pruned).toHaveLength(3)
+    expect(settlePruned(verify, before, after).pruned).toEqual([
+      { case: "b", duplicateOf: "a", reason: same("same"), title: same("Health again"), method: "POST", path: "/health" },
+    ])
   })
 
   test("parseVerify keeps fixes that name a case", () => {

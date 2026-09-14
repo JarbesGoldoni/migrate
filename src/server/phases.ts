@@ -8,6 +8,9 @@ import {
   parseRules,
   parseTests,
   parseVerify,
+  redundantCases,
+  settlePruned,
+  type Verify,
 } from "../shared/contracts"
 import type { PhaseName, ProjectSnapshot } from "../shared/types"
 import {
@@ -43,6 +46,8 @@ export type PhaseDefinition = {
   output?(batch?: Batch): string
   prompt?(ctx: PromptContext): string
   parse?(raw: unknown): unknown
+  /** Completes the parsed output with what only the snapshots before and after the agent's run know. */
+  complete?(parsed: unknown, before: ProjectSnapshot, after: ProjectSnapshot, batch?: Batch): unknown
   after?(ctx: PhaseContext): Promise<void>
   commit(batch?: Batch): string
 }
@@ -134,11 +139,15 @@ export const PHASES: Record<PhaseName, PhaseDefinition> = {
       if (!s.tests[b!.id]) return "Write the characterization tests first"
       const run = s.legacyRuns[b!.id]
       if (!run || run.error) return "Run the tests against legacy first"
-      return run.results.some((r) => !r.expectation.match) ? undefined : "Every legacy response already matches the prediction"
+      const mismatched = run.results.some((r) => !r.expectation.match)
+      return mismatched || redundantCases(s.tests[b!.id]).length > 0
+        ? undefined
+        : "Every legacy response already matches the prediction and no test repeats another"
     },
     output: (b) => artifacts.batch(b!.id, "verify"),
     prompt: verifyPrompt,
     parse: parseVerify,
+    complete: (parsed, before, after, b) => settlePruned(parsed as Verify, before.tests[b!.id], after.tests[b!.id]),
     // One pass, then the adapted suite is replayed once — no loop.
     after: async (ctx) => {
       await ctx.ops.writeCurls(ctx.batch!.id)

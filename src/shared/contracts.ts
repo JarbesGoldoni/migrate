@@ -473,6 +473,21 @@ export function parseTests(input: unknown) {
   return { ...raw, cases }
 }
 
+const byKey = (value: Record<string, string> | undefined) => Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b))
+
+/** Groups of cases that send the same request and expect the same answer; the first id of each group came first. */
+export function redundantCases(tests: { cases: Array<{ id: string; request?: unknown; expect?: unknown; ignore?: unknown }> } | undefined): string[][] {
+  const groups = new Map<string, string[]>()
+  for (const c of tests?.cases ?? []) {
+    const { method, path, query, headers, body } = (c.request ?? {}) as Partial<TestCase["request"]>
+    const expected = (c.expect ?? {}) as Partial<TestCase["expect"]>
+    const ignore = Array.isArray(c.ignore) ? [...c.ignore].sort() : []
+    const key = JSON.stringify([method, path, byKey(query), byKey(headers), body ?? null, expected.status, expected.body ?? null, expected.match, ignore])
+    groups.set(key, [...(groups.get(key) ?? []), c.id])
+  }
+  return [...groups.values()].filter((ids) => ids.length > 1)
+}
+
 // ── Port and reconcile reports ──────────────────────────────────────────────
 
 const PortSchema = obj({
@@ -513,6 +528,9 @@ export const VERIFY_ACTIONS = ["request", "setup", "expectation", "removed"] as 
 const VerifySchema = obj({
   batch: text(),
   fixes: list(obj({ case: text(), headline: prose(), cause: prose(), action: oneOf(VERIFY_ACTIONS, "expectation"), change: prose() })),
+  // Cases removed because another case already proves the same thing. Title, method and path are
+  // filled in by the pipeline from the suite as it was, so the removal can still be shown.
+  pruned: list(obj({ case: text(), duplicateOf: text(), reason: prose(), title: prose(), method: text(), path: text() })),
   notes: proseList(),
 })
 
@@ -520,5 +538,19 @@ export type Verify = ReturnType<typeof parseVerify>
 
 export function parseVerify(input: unknown) {
   const raw = VerifySchema.parse(input)
-  return { ...raw, fixes: raw.fixes.filter((f) => f.case) }
+  return { ...raw, fixes: raw.fixes.filter((f) => f.case), pruned: raw.pruned.filter((p) => p.case) }
+}
+
+/** Keeps only the removals that really left the suite, described as they were before the agent ran. */
+export function settlePruned(verify: Verify, before: Tests | undefined, after: Tests | undefined): Verify {
+  const remaining = new Set(after?.cases.map((c) => c.id))
+  const previous = new Map(before?.cases.map((c) => [c.id, c]))
+  return {
+    ...verify,
+    pruned: verify.pruned.flatMap((p) => {
+      const testCase = previous.get(p.case)
+      if (!testCase || remaining.has(p.case)) return []
+      return [{ ...p, title: testCase.title, method: testCase.request.method, path: testCase.request.path }]
+    }),
+  }
 }

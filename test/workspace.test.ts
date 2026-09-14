@@ -120,7 +120,7 @@ describe("Store", () => {
     expect(snapshot.builds.catalog).toBeDefined()
     expect(snapshot.parity.catalog).toBeDefined()
     expect(snapshot.reconcile.catalog.batch).toBe("catalog")
-    expect(snapshot.verify.catalog).toEqual({ batch: "catalog", fixes: [], notes: [] })
+    expect(snapshot.verify.catalog).toEqual({ batch: "catalog", fixes: [], pruned: [], notes: [] })
 
     expect(await store.loadActivity({ ...project, workspace: join(dir, "nowhere") })).toEqual([])
     await writeJson(join(workspace, artifacts.activity), [
