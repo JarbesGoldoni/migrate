@@ -92,17 +92,14 @@ export function ProjectScreen({ id, view }: { id: string; view: string }) {
         <PhaseRail snapshot={snapshot} current={current} />
         <main className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-8 py-8">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={current}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
-              >
-                {renderView(current, snapshot, activity)}
-              </motion.div>
-            </AnimatePresence>
+            <motion.div
+              key={current}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+            >
+              {renderView(current, snapshot, activity)}
+            </motion.div>
           </div>
         </main>
         <AnimatePresence initial={false}>

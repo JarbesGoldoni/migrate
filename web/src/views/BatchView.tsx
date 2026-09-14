@@ -156,15 +156,13 @@ export function BatchView({ snapshot, activity, batchId }: { snapshot: Snapshot;
         ]}
       />
 
-      <AnimatePresence mode="wait">
-        <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }}>
+      <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           {tab === "rules" && <RulesTab snapshot={snapshot} batchId={batchId} activity={activity} />}
           {tab === "tests" && <TestsTab snapshot={snapshot} batchId={batchId} activity={activity} />}
           {tab === "port" && <PortTab snapshot={snapshot} batchId={batchId} activity={activity} />}
           {tab === "parity" && <ParityTab snapshot={snapshot} batchId={batchId} activity={activity} />}
           {tab === "playground" && <PlaygroundTab snapshot={snapshot} batchId={batchId} />}
-        </motion.div>
-      </AnimatePresence>
+      </motion.div>
     </div>
   )
 }
