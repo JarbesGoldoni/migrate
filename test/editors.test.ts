@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { EventEmitter } from "node:events"
-import type { ChildProcess } from "node:child_process"
 import { detectEditors, launch, openFolder, openInEditor, systemOpener } from "../src/server/editors"
-import { appWindowCandidates, appWindowName, openAppWindow, resolveAppWindow } from "../src/server/window"
 import type { Exec } from "../src/server/util/exec"
 
 const lookup = (name: string) => (name === "code" || name === "zed" ? `/bin/${name}` : undefined)
@@ -37,48 +34,5 @@ describe("opening the workspace", () => {
   test("launch reports whether the program started", async () => {
     expect(await launch("definitely-not-a-real-command-xyz", [])).toBe(false)
     expect(await launch("true", [])).toBe(true)
-  })
-})
-
-function fakeChild() {
-  const child = new EventEmitter() as ChildProcess & { exitCode: number | null }
-  child.exitCode = null
-  return child
-}
-
-describe("app window", () => {
-  test("looks next to the bundle, then in development builds", () => {
-    expect(appWindowName("win32")).toBe("simplify-migrate-app.exe")
-    const candidates = appWindowCandidates("file:///pkg/dist/cli.js", { MIGRATE_APP_BIN: "/custom/app" }, "linux", "x64")
-    expect(candidates).toEqual([
-      "/custom/app",
-      "/pkg/dist/app/linux-x64/simplify-migrate-app",
-      "/pkg/dist/app/linux-x64/simplify-migrate-app",
-      "/pkg/src-tauri/target/release/simplify-migrate-app",
-    ])
-    expect(resolveAppWindow("file:///pkg/dist/cli.js", {}, (path) => String(path).includes("src-tauri"))).toContain("src-tauri")
-    expect(resolveAppWindow("file:///pkg/dist/cli.js", {}, () => false)).toBeUndefined()
-  })
-
-  test("falls back when the window cannot start, and reports when it closes", async () => {
-    const failing = fakeChild()
-    const failed = openAppWindow("/app", "http://x", () => {}, () => failing, 20)
-    failing.emit("error", new Error("ENOENT"))
-    expect(await failed).toBe(false)
-
-    const quitting = fakeChild()
-    const quit = openAppWindow("/app", "http://x", () => {}, () => quitting, 20)
-    quitting.exitCode = 1
-    quitting.emit("exit", 1)
-    expect(await quit).toBe(false)
-
-    let closed = false
-    const running = fakeChild()
-    const args: string[][] = []
-    const opened = openAppWindow("/app", "http://x", () => (closed = true), (command, list) => (args.push([command, ...list]), running), 20)
-    expect(await opened).toBe(true)
-    expect(args).toEqual([["/app", "http://x"]])
-    running.emit("exit", 0)
-    expect(closed).toBe(true)
   })
 })

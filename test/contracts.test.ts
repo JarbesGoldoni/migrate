@@ -38,7 +38,9 @@ describe("localized text", () => {
 
   test("parseVerify keeps fixes that name a case", () => {
     const verify = parseVerify({ fixes: [{ case: "c1", cause: { en: "why", es: "por qué" }, action: "REMOVED" }, { cause: "orphan" }] })
-    expect(verify.fixes).toEqual([{ case: "c1", cause: { en: "why", "pt-BR": "why", es: "por qué" }, action: "removed", change: same("") }])
+    expect(verify.fixes).toEqual([
+      { case: "c1", headline: same(""), cause: { en: "why", "pt-BR": "why", es: "por qué" }, action: "removed", change: same("") },
+    ])
   })
 })
 
@@ -105,6 +107,33 @@ describe("parseDiscovery", () => {
     ])
     expect(d.run.port).toBe(3000)
     expect(d.run.env[0].required).toBe(true)
+  })
+})
+
+describe("recommendations", () => {
+  test("keep catalog languages, fill known stacks, drop duplicates and cap at three", () => {
+    const d = parseDiscovery({
+      recommendations: [
+        { kind: "FINOPS", language: "Golang", reason: "cheap", stacks: [{ id: "CHI" }, { name: "Echo", components: ["echo"] }, { name: "Third" }] },
+        { kind: "scale", language: "elixir", version: "1.18", stacks: [{}] },
+        { kind: "upgrade", language: "cobol" },
+        { language: "go", version: "1.23" },
+        { kind: "weird", language: "Java", version: "21" },
+        { language: "rust" },
+      ],
+    })
+    expect(d.recommendations.map((r) => [r.kind, r.language, r.version])).toEqual([
+      ["finops", "go", "1.23"],
+      ["scale", "elixir", "1.18"],
+      ["fit", "java", "21"],
+    ])
+    expect(d.recommendations[0].reason).toEqual(same("cheap"))
+    expect(d.recommendations[0].stacks).toEqual([
+      { id: "chi", name: "chi", components: ["chi", "pgx", "sqlc"], reason: same("") },
+      { id: "echo", name: "Echo", components: ["echo"], reason: same("") },
+    ])
+    expect(d.recommendations[1].stacks).toEqual([])
+    expect(parseDiscovery({}).recommendations).toEqual([])
   })
 })
 
@@ -195,7 +224,8 @@ describe("other contracts", () => {
     expect(port.files).toHaveLength(1)
     expect(port.routes[0].method).toBe("GET")
     const reconcile = parseReconcile({ fixes: [{ case: "c1", files: ["v2/a.go"] }], notes: "not a list" })
-    expect(reconcile.fixes[0]).toMatchObject({ case: "c1", files: ["v2/a.go"] })
+    expect(reconcile.fixes[0]).toMatchObject({ case: "c1", files: ["v2/a.go"], headline: same("") })
+    expect(parseReconcile({ fixes: [{ case: "c2", headline: "v2 answered **404**" }] }).fixes[0].headline).toEqual(same("v2 answered **404**"))
     expect(reconcile.notes).toEqual([])
   })
 })

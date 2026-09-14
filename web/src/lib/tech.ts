@@ -63,6 +63,7 @@ import {
   Bell,
 } from "lucide-react"
 import {
+  siActix,
   siAdyen,
   siAlgolia,
   siAlpinelinux,
@@ -89,13 +90,16 @@ import {
   siDjango,
   siDocker,
   siDotnet,
+  siDrizzle,
   siElasticsearch,
   siElixir,
+  siErlang,
   siExpress,
   siFastapi,
   siFastify,
   siFirebase,
   siFlask,
+  siGin,
   siGit,
   siGithub,
   siGitlab,
@@ -104,6 +108,7 @@ import {
   siGradle,
   siGraphql,
   siGunicorn,
+  siHibernate,
   siHono,
   siHubspot,
   siInfluxdb,
@@ -114,6 +119,7 @@ import {
   siKlarna,
   siKoa,
   siKotlin,
+  siKtor,
   siKubernetes,
   siLaravel,
   siLinux,
@@ -143,6 +149,8 @@ import {
   siPodman,
   siPostgresql,
   siPrisma,
+  siPuma,
+  siPydantic,
   siPython,
   siQuarkus,
   siRabbitmq,
@@ -159,6 +167,7 @@ import {
   siSocketdotio,
   siSpringboot,
   siSqlite,
+  siSqlalchemy,
   siSquare,
   siStripe,
   siSupabase,
@@ -166,6 +175,7 @@ import {
   siSymfony,
   siTelegram,
   siTerraform,
+  siTokio,
   siTypescript,
   siVercel,
   siVuedotjs,
@@ -231,8 +241,18 @@ const BRANDS: Array<[string[], BrandIcon]> = [
   [["sequelize"], siSequelize],
   [["kotlin"], siKotlin],
   [["scala"], siScala],
-  [["elixir"], siElixir],
-  [["phoenix"], siPhoenixframework],
+  [["elixir", "plug", "bandit", "ecto", "oban"], siElixir],
+  [["erlang", "otp", "cowboy", "elli", "epgsql"], siErlang],
+  [["gin"], siGin],
+  [["actix", "actix-web"], siActix],
+  [["tokio", "axum"], siTokio],
+  [["ktor"], siKtor],
+  [["hibernate"], siHibernate],
+  [["drizzle"], siDrizzle],
+  [["pydantic"], siPydantic],
+  [["sqlalchemy"], siSqlalchemy],
+  [["puma"], siPuma],
+  [["phoenix", "phoenixframework"], siPhoenixframework],
   [["cassandra"], siApachecassandra],
   [["nats"], siNatsdotio],
   [["github"], siGithub],
@@ -308,25 +328,6 @@ export function readableHex(hex: string) {
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
   return luminance < 0.28 ? "#d5dbe7" : `#${hex}`
-}
-
-export const TARGET_TECH: Record<string, string> = {
-  go: "go",
-  rust: "rust",
-  csharp: "dotnet",
-  typescript: "hono",
-  kotlin: "kotlin",
-  java: "java",
-  python: "fastapi",
-}
-export const TARGET_LABEL: Record<string, string> = {
-  go: "Go",
-  rust: "Rust",
-  csharp: "C#",
-  typescript: "TypeScript",
-  kotlin: "Kotlin",
-  java: "Java",
-  python: "Python",
 }
 
 export const MARKER_TECH: Record<string, string> = {

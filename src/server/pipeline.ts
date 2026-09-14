@@ -27,7 +27,8 @@ import { type Compose, compose, detectCompose, waitForHttp } from "./env/compose
 import { workspacesDir } from "./paths"
 import { PHASES, type PhaseDefinition, type PhaseOps } from "./phases"
 import { probeProject } from "./preflight"
-import { composeProject, type PromptContext, TARGETS, targetOf } from "./prompts"
+import { defaultStack, normalizeLanguage, sanitizeStack, type StackChoice, stackOf } from "../shared/stacks"
+import { composeProject, type PromptContext, targetOf } from "./prompts"
 import { artifacts, type Store, writeJson } from "./store"
 import { type Captures, resolveRequest } from "./testing/captures"
 import { compareExpectation, compareResponses } from "./testing/compare"
@@ -62,7 +63,7 @@ export class Pipeline {
 
   constructor(private readonly deps: PipelineDeps) {}
 
-  async createProject(input: { source: string; model?: ModelRef; target?: string; language?: Locale }) {
+  async createProject(input: { source: string; model?: ModelRef; target?: string; stack?: unknown; language?: Locale }) {
     const probe = await probeProject(input.source, this.deps.exec)
     if (!probe.exists) throw new Error(`Folder not found: ${probe.path}`)
     const id = randomBytes(3).toString("hex")
@@ -75,6 +76,7 @@ export class Pipeline {
     const used = (await this.deps.store.list()).flatMap((p) => [p.ports.legacy, p.ports.v2])
     const legacy = await freePort(18080 + used.length, used)
     const v2 = await freePort(legacy + 1, [...used, legacy])
+    const stack = chosenStack(input)
     const record: ProjectRecord = {
       id,
       name: probe.name,
@@ -83,7 +85,7 @@ export class Pipeline {
       branch,
       createdAt: Date.now(),
       model: input.model,
-      target: input.target && TARGETS[input.target] ? input.target : "go",
+      ...(stack ? { target: stack.language, stack } : {}),
       language: isLocale(input.language) ? input.language : "en",
       ports: { legacy, v2 },
     }
@@ -97,12 +99,13 @@ export class Pipeline {
     return project
   }
 
-  async updateProject(id: string, patch: { model?: ModelRef; target?: string; language?: Locale }) {
+  async updateProject(id: string, patch: { model?: ModelRef; target?: string; stack?: unknown; language?: Locale }) {
     const project = await this.project(id)
+    const stack = chosenStack(patch)
     const next = {
       ...project,
       ...(patch.model ? { model: patch.model } : {}),
-      ...(patch.target && TARGETS[patch.target] ? { target: patch.target } : {}),
+      ...(stack ? { target: stack.language, stack } : {}),
       ...(isLocale(patch.language) ? { language: patch.language } : {}),
     }
     await this.deps.store.put(next)
@@ -474,7 +477,7 @@ export class Pipeline {
   private async buildV2(project: ProjectRecord, batchId: string, key: string, signal: AbortSignal) {
     const steps: BuildStep[] = []
     const v2 = join(project.workspace, "v2")
-    if (project.target === "go") {
+    if (stackOf(project)?.language === "go") {
       const go = await this.deps.exec("go", ["version"])
       if (go.code === 0) {
         for (const [name, args] of [
@@ -754,4 +757,9 @@ export function exportBranchName(project: Pick<ProjectRecord, "branch">) {
 
 export function targetLabel(project: ProjectRecord) {
   return targetOf(project).label
+}
+
+/** A full stack choice wins; a bare language id gets that language's first stack. */
+function chosenStack(input: { target?: string; stack?: unknown }): StackChoice | undefined {
+  return sanitizeStack(input.stack) ?? defaultStack(normalizeLanguage(input.target) ?? "")
 }

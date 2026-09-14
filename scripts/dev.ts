@@ -3,11 +3,11 @@ export {}
 const port = process.env.MIGRATE_API_PORT ?? "4800"
 const env = { ...process.env, MIGRATE_API_PORT: port }
 
-const api = Bun.spawn(["bun", "--watch", "src/cli.ts", "--port", port, "--no-open", "--api-only"], {
+const api = Bun.spawn(["bun", "--watch", "src/cli.ts", "--port", port, "--api-only"], {
   stdio: ["inherit", "inherit", "inherit"],
   env,
 })
-const web = Bun.spawn(["bunx", "vite"], { stdio: ["inherit", "inherit", "inherit"], env })
+const web = Bun.spawn(["bun", "x", "vite"], { stdio: ["inherit", "inherit", "inherit"], env })
 
 const stop = () => {
   api.kill()

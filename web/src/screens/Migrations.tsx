@@ -29,7 +29,8 @@ import { cn } from "../lib/format"
 import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
 import { navigate } from "../lib/router"
-import { TARGET_LABEL, TARGET_TECH } from "../lib/tech"
+import { languageById, stackOf } from "../../../src/shared/stacks"
+import { stackTitle } from "../components/stack"
 
 export function Migrations() {
   const { t } = useI18n()
@@ -170,10 +171,7 @@ function MigrationCard({ item, index, onDeleted }: { item: MigrationListItem; in
               {t(status.key)}
             </Badge>
             <Badge icon={GitBranch}>{project.branch}</Badge>
-            <span className="flex items-center gap-1 text-xs text-slate-500">
-              <TechIcon tech={TARGET_TECH[project.target] ?? project.target} size={13} />
-              {TARGET_LABEL[project.target] ?? project.target}
-            </span>
+            <StackSummary project={project} />
           </div>
         </div>
       </div>
@@ -317,5 +315,22 @@ function Figure({ icon: Icon, value, suffix, label }: { icon: typeof Waypoints; 
         <span className="text-slate-500">{suffix}</span>
       </div>
     </div>
+  )
+}
+
+function StackSummary({ project }: { project: MigrationListItem["project"] }) {
+  const { t } = useI18n()
+  const choice = stackOf(project)
+  return (
+    <span className="flex items-center gap-1 text-xs text-slate-500">
+      {choice ? (
+        <>
+          <TechIcon tech={languageById(choice.language)?.icon} size={13} />
+          {stackTitle(choice)} · {choice.name}
+        </>
+      ) : (
+        t("target.none")
+      )}
+    </span>
   )
 }

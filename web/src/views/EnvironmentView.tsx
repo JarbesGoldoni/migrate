@@ -11,7 +11,7 @@ import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
 import { phaseStatus } from "../lib/pipeline"
 import { useReplayView } from "../lib/project"
-import { TARGET_TECH } from "../lib/tech"
+import { languageById, stackOf } from "../../../src/shared/stacks"
 import { PhaseAction, PhaseHeader, SectionTitle, Working } from "./common"
 
 type Service = NonNullable<Snapshot["environment"]>["services"][number]
@@ -132,7 +132,7 @@ function Lane({ side, services, status, port, snapshot }: { side: "legacy" | "v2
   const dependencies = snapshot.discovery?.dependencies ?? []
   const runtimeTech = legacy
     ? (snapshot.discovery?.stack.frameworks[0] ?? snapshot.discovery?.stack.runtime)
-    : (TARGET_TECH[snapshot.project.target] ?? snapshot.project.target)
+    : (languageById(stackOf(snapshot.project)?.language)?.icon ?? "go")
 
   const techOf = (service: Service) => {
     if (service.role === "legacy" || service.role === "v2") return runtimeTech

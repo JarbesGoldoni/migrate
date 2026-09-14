@@ -40,9 +40,6 @@ describe("HTTP API", () => {
     const { json } = await makeApp()
     expect((await json("/api/health")).body).toEqual({ ok: true, version: "9.9.9" })
     expect((await json("/api/engine")).body.ready).toBe(true)
-    const targets = (await json("/api/targets")).body
-    expect(targets.find((t: { id: string }) => t.id === "go")).toEqual({ id: "go", label: "Go", cost: 1, recommended: true })
-    expect(targets.map((t: { id: string }) => t.id)).toContain("rust")
     expect(Array.isArray((await json("/api/editors")).body)).toBe(true)
     const dir = await tempDir()
     await writeFiles(dir, { "app/package.json": "{}" })
@@ -55,7 +52,12 @@ describe("HTTP API", () => {
 
   test("creates and drives a migration", async () => {
     const { json, post, app, engine, bus } = await makeApp()
-    const repo = await gitRepo({ "src/app.js": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10" })
+    const repo = await gitRepo({
+      "src/app.js": "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10",
+      "lib/cache.pyc": "compiled",
+      "__pycache__/x.py": "cached",
+      "blob.dat": "\u0000binary",
+    })
     expect((await post("/api/projects", {})).status).toBe(400)
     const created = await post("/api/projects", { source: repo, target: "typescript", language: "pt-BR" })
     const id = created.body.id
@@ -87,7 +89,10 @@ describe("HTTP API", () => {
     expect((await json(`/api/projects/${id}/file?path=legacy/src/app.js`)).body.lines).toHaveLength(10)
     expect((await json(`/api/projects/${id}/file?path=../../../../etc/passwd`)).status).toBe(404)
     expect((await json(`/api/projects/${id}/file?path=legacy`)).status).toBe(404)
-    expect((await json(`/api/projects/${id}/tree?dir=legacy`)).body.files).toEqual(["legacy/src/app.js"])
+    expect((await json(`/api/projects/${id}/tree?dir=legacy`)).body).toEqual({ files: ["legacy/blob.dat", "legacy/src/app.js"], truncated: false })
+    expect((await json(`/api/projects/${id}/file?path=legacy/blob.dat`)).body).toMatchObject({ binary: true, lines: [] })
+    expect((await json(`/api/projects/${id}/file?path=legacy/lib/cache.pyc`)).body).toMatchObject({ binary: true })
+    expect((await json(`/api/projects/${id}/file?path=legacy/src/app.js&full=1`)).body).toMatchObject({ from: 1, to: 10, size: 60 })
     expect((await json(`/api/projects/${id}/tree?dir=../..`)).status).toBe(400)
 
     const played = await post(`/api/projects/${id}/playground`, { side: "legacy", request: { path: "/x" } })
@@ -117,7 +122,10 @@ describe("HTTP API", () => {
     }
     const { json, post, app } = await makeApp(undefined, opener)
     const repo = await gitRepo({ "a.js": "1" })
-    const id = (await post("/api/projects", { source: repo })).body.id
+    const created = await post("/api/projects", { source: repo, stack: { language: "go", stack: "gin" } })
+    expect(created.body).toMatchObject({ target: "go", stack: { name: "Gin" } })
+    const id = created.body.id
+    expect((await post(`/api/projects/${id}`, { stack: { language: "elixir", stack: "phoenix" } }, "PATCH")).body.stack.name).toBe("Phoenix")
     expect((await json("/api/editors")).body).toEqual([{ id: "code", label: "VS Code" }])
     expect((await post(`/api/projects/${id}/open`, { editor: "code" })).body.opened).toBe(true)
     const folder = await post(`/api/projects/${id}/open`, {})

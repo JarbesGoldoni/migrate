@@ -16,10 +16,17 @@ import { readSse, type SseEvent } from "./sse"
 const PERMISSIONS = { edit: "allow", bash: "allow", webfetch: "allow", external_directory: "allow" }
 
 type Providers = {
-  providers: Array<{ id: string; name: string; models: Record<string, { id: string; name: string }> }>
+  providers: Array<{
+    id: string
+    name: string
+    models: Record<string, { id: string; name: string; variants?: Record<string, { disabled?: boolean }> }>
+  }>
   default: Record<string, string>
 }
 
+type ProviderList = { all: Array<{ id: string; name: string }>; connected: string[] }
+
+/** Runs the user's own opencode as a headless server: same sign-ins, same config, same session history. */
 export class OpencodeEngine implements Engine {
   private proc?: ChildProcess
   private base?: string
@@ -32,7 +39,7 @@ export class OpencodeEngine implements Engine {
   // it from scanning a large folder such as the user's home on startup.
   private readonly home: string
 
-  constructor(private readonly options: { binary?: string; home?: string } = {}) {
+  constructor(private readonly options: { binary?: string; home?: string; stateHome?: string } = {}) {
     this.home = options.home ?? engineDir()
   }
 
@@ -47,18 +54,29 @@ export class OpencodeEngine implements Engine {
           providerName: p.name,
           modelID: m.id,
           name: m.name || m.id,
+          variants: Object.entries(m.variants ?? {})
+            .filter(([, v]) => !v?.disabled)
+            .map(([id]) => id),
         })),
       )
       const info: EngineInfo = {
         ready: true,
         models,
-        defaultModel: (await recentModel(models)) ?? firstDefault(providers, models),
+        defaultModel: (await recentModel(models, this.options.stateHome)) ?? firstDefault(providers, models),
       }
       this.cachedInfo = { at: Date.now(), info }
       return info
     } catch (error) {
       return { ready: false, models: [], error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /** Providers opencode is signed in to (or configured through environment variables). */
+  async providers(): Promise<Array<{ id: string; name: string }>> {
+    await this.start()
+    const list = await this.call<ProviderList>("GET", "/provider", this.home)
+    const names = new Map(list.all.map((p) => [p.id, p.name]))
+    return list.connected.map((id) => ({ id, name: names.get(id) ?? id }))
   }
 
   async run(options: RunOptions): Promise<RunResult> {
@@ -134,8 +152,10 @@ export class OpencodeEngine implements Engine {
     })().catch(() => false)
 
     await Promise.race([ready, new Promise((r) => setTimeout(r, 5_000))])
+    const { model } = options
     await this.call("POST", `/session/${sessionId}/prompt_async`, dir, {
-      ...(options.model ? { model: options.model } : {}),
+      ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
+      ...(model?.variant ? { variant: model.variant } : {}),
       parts: [{ type: "text", text: options.prompt }],
     })
 
@@ -147,11 +167,13 @@ export class OpencodeEngine implements Engine {
     return { sessionId, text, writes: [...writes], error: options.signal?.aborted ? "Stopped" : error }
   }
 
+  /** Stop the server; the next call starts a fresh one (after a sign-in, for example). */
   stop() {
     this.proc?.kill()
     this.proc = undefined
     this.base = undefined
     this.starting = undefined
+    this.cachedInfo = undefined
   }
 
   private async session(options: RunOptions) {
@@ -193,7 +215,7 @@ export class OpencodeEngine implements Engine {
 
   private async boot() {
     const binary = this.options.binary ?? resolveEngineBinary()
-    if (!binary || !existsSync(binary)) throw new Error("The AI engine is not installed")
+    if (!binary || !existsSync(binary)) throw new Error("opencode is not installed")
     const port = await freePort()
     this.stderr = ""
     await mkdir(this.home, { recursive: true })
@@ -222,7 +244,7 @@ export class OpencodeEngine implements Engine {
     const base = `http://127.0.0.1:${port}`
     const deadline = Date.now() + 60_000
     while (Date.now() < deadline) {
-      if (!this.proc) throw new Error(`The AI engine exited during startup. ${this.stderr.trim()}`)
+      if (!this.proc) throw new Error(`opencode exited during startup. ${this.stderr.trim()}`)
       const ok = await fetch(`${base}/global/health`, { headers: this.headers(), signal: AbortSignal.timeout(2_000) })
         .then((r) => r.ok)
         .catch(() => false)
@@ -233,7 +255,7 @@ export class OpencodeEngine implements Engine {
       await new Promise((r) => setTimeout(r, 400))
     }
     proc.kill()
-    throw new Error("The AI engine did not start within 60s")
+    throw new Error("opencode did not start within 60s")
   }
 }
 
@@ -243,6 +265,7 @@ function describeError(error: unknown) {
   return e.data?.message ?? e.message ?? e.name ?? "Unknown engine error"
 }
 
+/** The model the user last picked in opencode, with the effort they last used for it. */
 export async function recentModel(
   models: ModelOption[],
   stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
@@ -251,15 +274,22 @@ export async function recentModel(
   if (!raw) return undefined
   const parsed = (() => {
     try {
-      return JSON.parse(raw) as { recent?: ModelRef[] }
+      return JSON.parse(raw) as { recent?: ModelRef[]; variant?: Record<string, string> }
     } catch {
       return {}
     }
   })()
-  const hit = (parsed.recent ?? []).find((r) =>
-    models.some((m) => m.providerID === r.providerID && m.modelID === r.modelID),
-  )
-  return hit ? { providerID: hit.providerID, modelID: hit.modelID } : undefined
+  for (const recent of parsed.recent ?? []) {
+    const model = models.find((m) => m.providerID === recent.providerID && m.modelID === recent.modelID)
+    if (!model) continue
+    const variant = parsed.variant?.[`${model.providerID}/${model.modelID}`]
+    return {
+      providerID: model.providerID,
+      modelID: model.modelID,
+      ...(variant && model.variants?.includes(variant) ? { variant } : {}),
+    }
+  }
+  return undefined
 }
 
 export function firstDefault(providers: Providers, models: ModelOption[]): ModelRef | undefined {

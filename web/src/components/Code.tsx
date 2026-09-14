@@ -1,9 +1,10 @@
 import { FileCode2 } from "lucide-react"
 import { motion } from "motion/react"
 import { useEffect, useMemo, useState } from "react"
-import { highlight } from "sugar-high"
 import { api, type FileWindow } from "../lib/api"
+import { languageOf } from "../lib/files"
 import { cn } from "../lib/format"
+import { useTokens } from "../lib/highlight"
 import { useI18n } from "../lib/i18n"
 import { jsonLines, touches } from "../lib/json"
 import { CopyButton, Spinner } from "./ui"
@@ -36,7 +37,8 @@ export function CodeView({
       .catch((e: Error) => setError(e.message))
   }, [projectId, path, start, end])
 
-  const highlighted = useMemo(() => data?.lines.map((line) => highlight(line)) ?? [], [data])
+  const code = data && !data.binary ? data.lines.join("\n") : undefined
+  const tokens = useTokens(code, languageOf(path).id)
 
   return (
     <motion.div
@@ -63,9 +65,10 @@ export function CodeView({
           </div>
         )}
         {error && <div className="px-3 py-2 text-slate-500">{t("code.unavailable", { error })}</div>}
-        {data &&
-          highlighted.map((html, i) => {
-            const line = data.from + i
+        {data?.binary && <div className="px-3 py-2 text-slate-500">{t("code.binary")}</div>}
+        {code !== undefined &&
+          data!.lines.map((text, i) => {
+            const line = data!.from + i
             const hot = start !== undefined && line >= start && line <= (end ?? start)
             return (
               <div
@@ -76,8 +79,15 @@ export function CodeView({
                 )}
               >
                 <span className="w-12 shrink-0 pr-3 text-right text-slate-600 select-none">{line}</span>
-                {/* sugar-high escapes the source before wrapping tokens in spans */}
-                <code className="whitespace-pre" dangerouslySetInnerHTML={{ __html: html || " " }} />
+                <code className="whitespace-pre text-[#dfe4ee]">
+                  {tokens?.[i]
+                    ? tokens[i].map((token, j) => (
+                        <span key={j} style={{ color: token.color }}>
+                          {token.content}
+                        </span>
+                      ))
+                    : text || " "}
+                </code>
               </div>
             )
           })}

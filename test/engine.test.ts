@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import { chmod, mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { relativePath, toActivity, toolKind } from "../src/server/engine/activity"
-import { bundledBinary, findOnPath, resolveEngineBinary } from "../src/server/engine/binary"
+import { findOnPath, resolveEngineBinary } from "../src/server/engine/binary"
 import { firstDefault, OpencodeEngine, recentModel } from "../src/server/engine/opencode"
 import { parseSse, readSse } from "../src/server/engine/sse"
 import type { Activity } from "../src/shared/types"
@@ -94,35 +94,29 @@ describe("sse", () => {
 })
 
 describe("binary resolution", () => {
-  test("honors an explicit binary and finds the bundled engine", async () => {
+  test("honors an explicit binary, then PATH, then the official install location", async () => {
     const dir = await tempDir()
     const bin = join(dir, "engine")
     await writeFile(bin, "#!/bin/sh\n")
     expect(resolveEngineBinary({ MIGRATE_ENGINE_BIN: bin })).toBe(bin)
     expect(resolveEngineBinary({ MIGRATE_ENGINE_BIN: join(dir, "missing") })).toBeUndefined()
-    expect(resolveEngineBinary({ PATH: "" })).toBeDefined()
-    expect(bundledBinary()).toBeDefined()
-  })
-
-  test("falls back to PATH and the home install", async () => {
     const pathDir = await tempDir()
     await writeFile(join(pathDir, "opencode"), "#!/bin/sh\n")
-    const none = () => undefined
     expect(findOnPath("opencode", { PATH: `/nope:${pathDir}` })).toBe(join(pathDir, "opencode"))
     expect(findOnPath("opencode", {})).toBeUndefined()
-    expect(resolveEngineBinary({ PATH: pathDir }, none)).toBe(join(pathDir, "opencode"))
+    expect(resolveEngineBinary({ PATH: pathDir })).toBe(join(pathDir, "opencode"))
     const home = await tempDir()
     await mkdir(join(home, ".opencode", "bin"), { recursive: true })
     await writeFile(join(home, ".opencode", "bin", "opencode"), "#!/bin/sh\n")
-    expect(resolveEngineBinary({ PATH: "", HOME: home }, none)).toBe(join(home, ".opencode", "bin", "opencode"))
-    expect(resolveEngineBinary({ PATH: "", HOME: pathDir }, none)).toBeUndefined()
+    expect(resolveEngineBinary({ PATH: "", HOME: home })).toBe(join(home, ".opencode", "bin", "opencode"))
+    expect(resolveEngineBinary({ PATH: "", HOME: pathDir })).toBeUndefined()
   })
 })
 
 describe("default model", () => {
   const models = [
     { providerID: "a", providerName: "A", modelID: "x", name: "X" },
-    { providerID: "b", providerName: "B", modelID: "y", name: "Y" },
+    { providerID: "b", providerName: "B", modelID: "y", name: "Y", variants: ["low", "high"] },
   ]
 
   test("prefers the most recent model that is still available", async () => {
@@ -130,6 +124,10 @@ describe("default model", () => {
     const file = join(state, "opencode", "model.json")
     await mkdir(join(state, "opencode"), { recursive: true })
     await writeFile(file, JSON.stringify({ recent: [{ providerID: "gone", modelID: "z" }, { providerID: "b", modelID: "y" }] }))
+    expect(await recentModel(models, state)).toEqual({ providerID: "b", modelID: "y" })
+    await writeFile(file, JSON.stringify({ recent: [{ providerID: "b", modelID: "y" }], variant: { "b/y": "high" } }))
+    expect(await recentModel(models, state)).toEqual({ providerID: "b", modelID: "y", variant: "high" })
+    await writeFile(file, JSON.stringify({ recent: [{ providerID: "b", modelID: "y" }], variant: { "b/y": "default" } }))
     expect(await recentModel(models, state)).toEqual({ providerID: "b", modelID: "y" })
     await writeFile(file, JSON.stringify({ recent: [{ providerID: "gone", modelID: "z" }] }))
     expect(await recentModel(models, state)).toBeUndefined()
@@ -153,15 +151,22 @@ describe("OpencodeEngine against a fake engine server", async () => {
   const wrapper = join(dir, "fake-engine")
   await writeFile(wrapper, `#!/bin/sh\nexec "${process.execPath}" "${fixture}" "$@"\n`)
   await chmod(wrapper, 0o755)
-  const engine = new OpencodeEngine({ binary: wrapper })
+  const engine = new OpencodeEngine({ binary: wrapper, stateHome: join(dir, "state") })
   afterAll(() => engine.stop())
 
-  test("lists models", async () => {
+  test("lists models with their effort levels, and the providers it is signed in to", async () => {
     const info = await engine.info()
     expect(info.ready).toBe(true)
-    expect(info.models).toEqual([{ providerID: "fake", providerName: "Fake AI", modelID: "smart", name: "Smart" }])
+    expect(info.models).toEqual([{ providerID: "fake", providerName: "Fake AI", modelID: "smart", name: "Smart", variants: ["low", "high"] }])
     expect(info.defaultModel).toEqual({ providerID: "fake", modelID: "smart" })
     expect(await engine.info()).toBe(info)
+    expect(await engine.providers()).toEqual([
+      { id: "fake", name: "Fake AI" },
+      { id: "opencode", name: "OpenCode Zen" },
+      { id: "unnamed", name: "unnamed" },
+    ])
+    engine.stop()
+    expect(await engine.info()).not.toBe(info)
   })
 
   test("runs a prompt, streams activity and reports written files", async () => {
@@ -171,8 +176,12 @@ describe("OpencodeEngine against a fake engine server", async () => {
       phase: "discover",
       title: "Map",
       prompt: "Write out.json please",
-      model: { providerID: "fake", modelID: "smart" },
+      model: { providerID: "fake", modelID: "smart", variant: "high" },
       onActivity: (a) => activity.push(a),
+    })
+    expect(await Bun.file(join(workspace, "last-prompt.json")).json()).toMatchObject({
+      model: { providerID: "fake", modelID: "smart" },
+      variant: "high",
     })
     expect(result.sessionId).toBe("ses_fake")
     expect(result.text).toBe("All done.")

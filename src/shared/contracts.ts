@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { languageById, normalizeLanguage, RECOMMENDATION_KINDS } from "./stacks"
 
 // Phase outputs are written by a model, so every field is tolerant: bad or
 // missing values fall back to a default instead of failing the whole phase.
@@ -181,12 +182,44 @@ const DiscoverySchema = obj({
       notes: prose(),
     }),
   ),
+  recommendations: list(
+    obj({
+      kind: oneOf(RECOMMENDATION_KINDS, "fit"),
+      language: text(),
+      version: text(),
+      reason: prose(),
+      stacks: list(obj({ id: text(), name: text(), components: strings(), reason: prose() })),
+    }),
+  ),
 })
 
 export type Discovery = ReturnType<typeof parseDiscovery>
 export type ArchitectureNode = Discovery["nodes"][number]
 export type ArchitectureEdge = Discovery["edges"][number]
 export type Dependency = Discovery["dependencies"][number]
+export type Recommendation = Discovery["recommendations"][number]
+export type RecommendedStack = Recommendation["stacks"][number]
+
+/** Up to three target languages from the catalog, each with up to two stacks; unknown languages are dropped. */
+function recommendationsOf(raw: z.output<typeof DiscoverySchema>["recommendations"]) {
+  const seen = new Set<string>()
+  return raw
+    .flatMap((r) => {
+      const language = languageById(normalizeLanguage(r.language))
+      if (!language) return []
+      const version = r.version || language.version
+      if (seen.has(`${language.id}@${version}`)) return []
+      seen.add(`${language.id}@${version}`)
+      const stacks = r.stacks.flatMap((s) => {
+        const known = language.stacks.find((k) => k.id === s.id.toLowerCase() || k.name.toLowerCase() === s.name.toLowerCase())
+        const name = s.name || known?.name
+        if (!name) return []
+        return [{ id: known?.id ?? slug(name), name, components: s.components.length ? s.components : (known?.components ?? []), reason: s.reason }]
+      })
+      return [{ ...r, language: language.id, version, stacks: stacks.slice(0, 2) }]
+    })
+    .slice(0, 3)
+}
 
 export function parseDiscovery(input: unknown) {
   const raw = DiscoverySchema.parse(input)
@@ -213,7 +246,7 @@ export function parseDiscovery(input: unknown) {
     raw.dependencies.filter((d) => d.id || d.name),
     (d) => d.name,
   ).map((d) => ({ ...d, name: d.name || d.id }))
-  return { ...raw, nodes, edges, dependencies }
+  return { ...raw, nodes, edges, dependencies, recommendations: recommendationsOf(raw.recommendations) }
 }
 
 // ── Entry points and batches ────────────────────────────────────────────────
@@ -463,7 +496,7 @@ export function parsePort(input: unknown) {
 
 const ReconcileSchema = obj({
   batch: text(),
-  fixes: list(obj({ case: text(), cause: prose(), change: prose(), files: strings() })),
+  fixes: list(obj({ case: text(), headline: prose(), cause: prose(), change: prose(), files: strings() })),
   notes: proseList(),
 })
 
@@ -479,7 +512,7 @@ export const VERIFY_ACTIONS = ["request", "setup", "expectation", "removed"] as 
 
 const VerifySchema = obj({
   batch: text(),
-  fixes: list(obj({ case: text(), cause: prose(), action: oneOf(VERIFY_ACTIONS, "expectation"), change: prose() })),
+  fixes: list(obj({ case: text(), headline: prose(), cause: prose(), action: oneOf(VERIFY_ACTIONS, "expectation"), change: prose() })),
   notes: proseList(),
 })
 

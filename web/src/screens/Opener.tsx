@@ -18,14 +18,14 @@ import {
   Waypoints,
 } from "lucide-react"
 import { motion } from "motion/react"
-import { useEffect, useMemo, useState } from "react"
-import { highlight } from "sugar-high"
+import { useEffect, useState } from "react"
 import type { MigrationListItem } from "../../../src/shared/types"
 import { Backdrop, Logo, TechIcon } from "../components/brand"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { Button } from "../components/ui"
 import { api } from "../lib/api"
 import { cn } from "../lib/format"
+import { useTokens } from "../lib/highlight"
 import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
 import { navigate } from "../lib/router"
@@ -301,15 +301,13 @@ function TransformStrip() {
     const timer = setInterval(() => setCycle((c) => c + 1), 9000)
     return () => clearInterval(timer)
   }, [])
-  const legacy = useMemo(() => LEGACY_CODE.split("\n").map((l) => highlight(l)), [])
-  const modern = useMemo(() => MODERN_CODE.split("\n").map((l) => highlight(l)), [])
   const check = CHECKS[cycle % CHECKS.length]
 
   return (
     <motion.section initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.8, duration: 1, ease }} className="mt-20 grid items-center gap-6 lg:grid-cols-[1fr_auto_1fr]">
-      <CodeCard tone="legacy" title="legacy/src/routes/cart.js" tech="express" lines={legacy} cycle={cycle} badge={t("common.legacy")} />
+      <CodeCard tone="legacy" title="legacy/src/routes/cart.js" tech="express" code={LEGACY_CODE} lang="javascript" cycle={cycle} badge={t("common.legacy")} />
       <AgentOrb cycle={cycle} label={t("opener.agent")} />
-      <CodeCard tone="modern" title="v2/internal/domain/pricing.go" tech="go" lines={modern} cycle={cycle} typing badge={t("common.v2")} />
+      <CodeCard tone="modern" title="v2/internal/domain/pricing.go" tech="go" code={MODERN_CODE} lang="go" cycle={cycle} typing badge={t("common.v2")} />
       <div className="flex justify-center lg:col-span-3">
         <motion.div
           key={cycle}
@@ -335,8 +333,28 @@ function TransformStrip() {
   )
 }
 
-function CodeCard({ tone, title, tech, lines, cycle, typing, badge }: { tone: "legacy" | "modern"; title: string; tech: string; lines: string[]; cycle: number; typing?: boolean; badge: string }) {
+function CodeCard({
+  tone,
+  title,
+  tech,
+  code,
+  lang,
+  cycle,
+  typing,
+  badge,
+}: {
+  tone: "legacy" | "modern"
+  title: string
+  tech: string
+  code: string
+  lang: string
+  cycle: number
+  typing?: boolean
+  badge: string
+}) {
   const legacy = tone === "legacy"
+  const lines = code.split("\n")
+  const tokens = useTokens(code, lang)
   return (
     <div
       className={cn(
@@ -361,7 +379,7 @@ function CodeCard({ tone, title, tech, lines, cycle, typing, badge }: { tone: "l
             transition={{ duration: 3.2, ease: "easeInOut" }}
           />
         )}
-        {lines.map((html, i) => (
+        {lines.map((text, i) => (
           <motion.div
             key={`${cycle}-${i}`}
             initial={typing ? { opacity: 0, x: -8 } : false}
@@ -370,7 +388,15 @@ function CodeCard({ tone, title, tech, lines, cycle, typing, badge }: { tone: "l
             className="flex"
           >
             <span className="w-8 shrink-0 pr-3 text-right text-slate-700 select-none">{i + 1}</span>
-            <code className="whitespace-pre" dangerouslySetInnerHTML={{ __html: html || " " }} />
+            <code className="whitespace-pre text-[#dfe4ee]">
+              {tokens?.[i]
+                ? tokens[i].map((token, j) => (
+                    <span key={j} style={{ color: token.color }}>
+                      {token.content}
+                    </span>
+                  ))
+                : text || " "}
+            </code>
           </motion.div>
         ))}
       </div>

@@ -54,8 +54,24 @@ Bun.serve({
     if (path === "/global/health") return Response.json({ healthy: true })
     if (path === "/config/providers") {
       return Response.json({
-        providers: [{ id: "fake", name: "Fake AI", models: { smart: { id: "smart", name: "Smart" } } }],
+        providers: [
+          {
+            id: "fake",
+            name: "Fake AI",
+            models: { smart: { id: "smart", name: "Smart", variants: { low: {}, high: {}, off: { disabled: true } } } },
+          },
+        ],
         default: { fake: "smart" },
+      })
+    }
+    if (path === "/provider") {
+      return Response.json({
+        all: [
+          { id: "fake", name: "Fake AI" },
+          { id: "opencode", name: "OpenCode Zen" },
+          { id: "other", name: "Other" },
+        ],
+        connected: ["fake", "opencode", "unnamed"],
       })
     }
     if (path === "/session" && request.method === "POST") return Response.json({ id: "ses_fake" })
@@ -77,6 +93,7 @@ Bun.serve({
     }
     if (path.endsWith("/prompt_async")) {
       const body = (await request.json()) as { parts: Array<{ text: string }> }
+      await Bun.write(`${url.searchParams.get("directory") ?? "."}/last-prompt.json`, JSON.stringify(body))
       setTimeout(() => void scenario(body.parts[0].text, url.searchParams.get("directory") ?? "."), 30)
       return new Response(null, { status: 204 })
     }

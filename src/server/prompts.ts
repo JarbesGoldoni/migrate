@@ -1,4 +1,5 @@
 import type { Batch, Discovery, EntryPoints, Localized } from "../shared/contracts"
+import { defaultStack, LANGUAGES, languageById, type StackChoice, stackOf } from "../shared/stacks"
 import type { LegacyRun, ParityRun, ProjectRecord } from "../shared/types"
 import { artifacts } from "./store"
 
@@ -27,13 +28,10 @@ const tr = (en: string, ptBR: string, es: string): Localized => ({ en, "pt-BR": 
 /** Literal text (a status line, a product name) reads the same in every language. */
 const same = (value: string) => tr(value, value, value)
 
-export type TargetStack = {
-  label: string
-  /** Relative cloud bill for the same traffic: 1 lowest (small binaries, low memory, fast cold starts). */
-  cost: 1 | 2 | 3
-  recommended?: boolean
+/** How v2 is built for each language. The chosen stack decides the framework and libraries. */
+export type LanguageBuild = {
   image: string
-  verify: string
+  verify: string | ((choice: StackChoice) => string)
   architecture: string
 }
 
@@ -42,14 +40,11 @@ const PORTABLE = `- Business rules are pure functions with no HTTP or I/O awaren
 - Data access and external calls sit behind small interfaces.
 - The service reads the same configuration as legacy from environment variables and listens on port 8080.`
 
-export const TARGETS: Record<string, TargetStack> = {
+export const BUILDS: Record<string, LanguageBuild> = {
   go: {
-    label: "Go",
-    cost: 1,
-    recommended: true,
     image: "docker.io/library/golang:1.23-alpine",
     verify: "go build ./... && go test ./...",
-    architecture: `- v2/ is a single Go module (module name "v2", go 1.23) using the standard library net/http router (Go 1.22+ patterns such as "POST /api/orders/{id}"). No web framework. Add dependencies only when a dependency needs a driver (pgx for PostgreSQL, go-redis for Redis).
+    architecture: `- v2/ is a single Go module (module name "v2").
 - Business rules are pure functions in v2/internal/domain/<area>/ with no HTTP, context or I/O awareness. Each rule id from rules.json maps to a function; put the rule id in a one-line comment above it.
 - Transport is one generic handler factory in v2/internal/httpapi/handler.go: decode and validate the request, call the service/domain function, map domain errors to the legacy status codes and write the legacy response shape. Routes are one-liners in v2/internal/httpapi/routes.go.
 - Data access and external calls sit behind small interfaces in v2/internal/store/ and v2/internal/clients/.
@@ -57,77 +52,128 @@ export const TARGETS: Record<string, TargetStack> = {
 - Table-driven unit tests next to the domain functions.
 - v2/Dockerfile: multi-stage (docker.io/library/golang:1.23-alpine builder, docker.io/library/alpine:3.20 runtime), build context v2/.`,
   },
+  elixir: {
+    image: "docker.io/library/elixir:1.17-alpine",
+    verify: "mix deps.get && mix compile && mix test",
+    architecture: `- v2/ is a Mix application (:v2) under an OTP supervision tree; its HTTP endpoint listens on port 8080.
+- Business rules are pure functions in v2/lib/v2/domain/<area>.ex with no HTTP or I/O awareness; each rule id from rules.json maps to a function, with the rule id in a comment above it.
+- One error translation module maps domain errors to the legacy status codes and response shape; routes stay thin.
+- Data access and external calls sit behind small behaviours in v2/lib/v2/store/ and v2/lib/v2/clients/.
+- The app reads the same configuration as legacy from environment variables in config/runtime.exs.
+- ExUnit tests for the domain functions.
+- v2/Dockerfile: multi-stage (docker.io/library/elixir:1.17-alpine builder producing a mix release, docker.io/library/alpine:3.20 runtime), build context v2/.`,
+  },
+  erlang: {
+    image: "docker.io/library/erlang:27-alpine",
+    verify: "rebar3 compile && rebar3 eunit",
+    architecture: `- v2/ is a rebar3 OTP release (application v2) whose HTTP listener runs on port 8080.
+- Business rules are pure functions in v2/apps/v2/src/v2_domain_<area>.erl with no HTTP or I/O awareness; each rule id from rules.json maps to a function, with the rule id in a comment above it.
+- One module maps domain errors to the legacy status codes and response shape; one handler module per resource.
+- Data access in v2_store_* modules and external calls in v2_client_* modules.
+- The release reads the same configuration as legacy from environment variables.
+- EUnit tests for the domain functions.
+- v2/Dockerfile: multi-stage (docker.io/library/erlang:27-alpine builder producing a rebar3 release, docker.io/library/alpine:3.20 runtime), build context v2/.`,
+  },
   rust: {
-    label: "Rust (Axum)",
-    cost: 1,
     image: "docker.io/library/rust:1-slim",
     verify: "cargo build && cargo test",
-    architecture: `- v2/ is a Cargo binary crate using axum, tokio and serde; sqlx or deadpool clients only where a dependency needs one.
+    architecture: `- v2/ is a Cargo binary crate using tokio and serde; database clients only where a dependency needs one.
 ${PORTABLE}
-- Rules live in v2/src/domain/<area>.rs, one error enum implements IntoResponse in v2/src/http/error.rs, routes in v2/src/http/routes.rs, stores and clients in v2/src/store/ and v2/src/clients/.
+- Rules live in v2/src/domain/<area>.rs, one error enum maps domain errors to responses in v2/src/http/error.rs, routes in v2/src/http/routes.rs, stores and clients in v2/src/store/ and v2/src/clients/.
 - Unit tests in #[cfg(test)] modules next to the domain functions.
 - v2/Dockerfile: multi-stage (docker.io/library/rust:1-slim builder, docker.io/library/debian:bookworm-slim runtime), build context v2/.`,
   },
   csharp: {
-    label: "C# (.NET minimal APIs)",
-    cost: 2,
     image: "mcr.microsoft.com/dotnet/sdk:8.0",
     verify: "dotnet build && dotnet test",
-    architecture: `- v2/ is an ASP.NET Core 8 minimal API solution: v2/src/Api (host and endpoints), v2/src/Domain (rules), v2/tests/Domain.Tests (xUnit).
+    architecture: `- v2/ is an ASP.NET Core solution: v2/src/Api (host and endpoints), v2/src/Domain (rules), v2/tests/Domain.Tests (xUnit).
 ${PORTABLE}
 - Rules are static functions in v2/src/Domain/<Area>/, one exception-to-result mapping in v2/src/Api/Errors.cs, endpoints grouped per resource.
-- v2/Dockerfile: multi-stage (mcr.microsoft.com/dotnet/sdk:8.0 builder publishing ReadyToRun, mcr.microsoft.com/dotnet/aspnet:8.0 runtime), build context v2/.`,
+- v2/Dockerfile: multi-stage (mcr.microsoft.com/dotnet/sdk:8.0 builder, mcr.microsoft.com/dotnet/aspnet:8.0 runtime, or runtime-deps for Native AOT), build context v2/.`,
   },
   typescript: {
-    label: "TypeScript (Bun + Hono)",
-    cost: 2,
     image: "docker.io/oven/bun:1",
-    verify: "bun install && bun test",
-    architecture: `- v2/ is a Bun + Hono TypeScript service listening on port 8080.
+    verify: (choice) => (choice.components.includes("bun") ? "bun install && bun test" : "npm install && npm test"),
+    architecture: `- v2/ is a TypeScript service listening on port 8080.
 - Business rules are pure functions in v2/src/domain/<area>/ with no HTTP or I/O awareness; each rule id from rules.json maps to a function (rule id in a one-line comment).
-- One handler factory in v2/src/http/handler.ts maps domain errors to the legacy status codes and response shape; routes are one-liners in v2/src/http/routes.ts.
+- One error handler maps domain errors to the legacy status codes and response shape; routes are one-liners in v2/src/http/routes.ts.
 - Data access and external calls behind small interfaces in v2/src/store/ and v2/src/clients/.
-- Unit tests with bun test next to the domain functions.
-- v2/Dockerfile based on docker.io/oven/bun:1, build context v2/.`,
+- Unit tests next to the domain functions.
+- v2/Dockerfile based on the stack's runtime (docker.io/oven/bun:1 for Bun, docker.io/library/node:22-alpine for Node.js), build context v2/.`,
   },
   kotlin: {
-    label: "Kotlin (Ktor)",
-    cost: 2,
     image: "docker.io/library/gradle:8-jdk21",
     verify: "gradle build --no-daemon",
-    architecture: `- v2/ is a Gradle (Kotlin DSL) Ktor 2 application with kotlinx.serialization.
+    architecture: `- v2/ is a Gradle (Kotlin DSL) application with kotlinx.serialization or Jackson.
 ${PORTABLE}
-- Rules in v2/src/main/kotlin/domain/<area>/, one StatusPages configuration maps domain errors, routes per resource in v2/src/main/kotlin/http/.
+- Rules in v2/src/main/kotlin/domain/<area>/, one place maps domain errors to responses, routes per resource in v2/src/main/kotlin/http/.
 - JUnit 5 unit tests for the domain functions.
 - v2/Dockerfile: multi-stage (docker.io/library/gradle:8-jdk21 builder, docker.io/library/eclipse-temurin:21-jre runtime), build context v2/.`,
   },
   java: {
-    label: "Java (Spring Boot)",
-    cost: 3,
     image: "docker.io/library/maven:3-eclipse-temurin-21",
     verify: "mvn -q -B verify",
-    architecture: `- v2/ is a Maven Spring Boot 3 application (Java 21, spring-boot-starter-web).
+    architecture: `- v2/ is a Maven application.
 ${PORTABLE}
-- Rules are plain classes in v2/src/main/java/v2/domain/<area>/, one @RestControllerAdvice maps domain errors, thin controllers per resource.
+- Rules are plain classes in v2/src/main/java/v2/domain/<area>/, one exception mapper turns domain errors into responses, thin resources or controllers per entity.
 - JUnit 5 unit tests for the domain classes.
-- v2/Dockerfile: multi-stage (docker.io/library/maven:3-eclipse-temurin-21 builder, docker.io/library/eclipse-temurin:21-jre runtime), build context v2/.`,
+- v2/Dockerfile: multi-stage (docker.io/library/maven:3-eclipse-temurin-21 builder, docker.io/library/eclipse-temurin:21-jre runtime; a GraalVM native builder for native stacks), build context v2/.`,
+  },
+  scala: {
+    image: "docker.io/sbtscala/scala-sbt",
+    verify: "sbt compile test",
+    architecture: `- v2/ is an sbt project for Scala 3.
+${PORTABLE}
+- Rules are pure functions in v2/src/main/scala/v2/domain/<area>/, one error mapping for responses, routes per resource in v2/src/main/scala/v2/http/.
+- MUnit or ScalaTest unit tests for the domain functions.
+- v2/Dockerfile: multi-stage (an sbtscala/scala-sbt builder, docker.io/library/eclipse-temurin:21-jre runtime), build context v2/.`,
   },
   python: {
-    label: "Python (FastAPI)",
-    cost: 3,
     image: "docker.io/library/python:3.12-slim",
     verify: "python -m compileall -q .",
-    architecture: `- v2/ is a FastAPI service served by uvicorn on port 8080.
+    architecture: `- v2/ is a Python service on port 8080 (uvicorn for ASGI frameworks, gunicorn for WSGI ones).
 - Business rules are pure functions in v2/app/domain/<area>.py with no HTTP or I/O awareness; each rule id from rules.json maps to a function (rule id in a one-line comment).
 - One exception handler maps domain errors to the legacy status codes and response shape; routers stay thin.
 - Data access and external calls behind small classes in v2/app/store/ and v2/app/clients/.
 - pytest unit tests for the domain functions.
 - v2/Dockerfile based on docker.io/library/python:3.12-slim, build context v2/.`,
   },
+  php: {
+    image: "docker.io/library/php:8.3-cli",
+    verify: "composer install && vendor/bin/phpunit",
+    architecture: `- v2/ is a Composer project served on port 8080.
+${PORTABLE}
+- Rules are plain classes in v2/src/Domain/<Area>/, one exception handler maps domain errors to responses, thin controllers per resource.
+- PHPUnit tests for the domain classes.
+- v2/Dockerfile based on docker.io/library/php:8.3-cli with Composer (or docker.io/dunglas/frankenphp), build context v2/.`,
+  },
+  ruby: {
+    image: "docker.io/library/ruby:3.3-slim",
+    verify: "bundle install && bundle exec rake test",
+    architecture: `- v2/ is a Bundler project served by puma on port 8080.
+${PORTABLE}
+- Rules are plain Ruby modules in v2/app/domain/<area>.rb (or v2/lib/domain), one error handler maps domain errors to responses, thin routes or controllers per resource.
+- Minitest or RSpec tests for the domain modules.
+- v2/Dockerfile based on docker.io/library/ruby:3.3-slim, build context v2/.`,
+  },
 }
 
+/** The language, stack and build a project ports to. Migrations without a choice yet fall back to Go. */
 export function targetOf(project: ProjectRecord) {
-  return TARGETS[project.target] ?? TARGETS.go
+  const choice = stackOf(project) ?? defaultStack("go")!
+  const language = languageById(choice.language)!
+  const build = BUILDS[language.id] ?? BUILDS.go
+  const verify = typeof build.verify === "function" ? build.verify(choice) : build.verify
+  const components = choice.components.length ? ` (${choice.components.join(", ")})` : ""
+  return {
+    choice,
+    language,
+    label: `${language.label} ${choice.version}`,
+    image: build.image,
+    verify,
+    architecture: `- Stack: ${language.label} ${choice.version} with ${choice.name}${components}. Use these libraries; add others only when a dependency needs a driver or client. Base images follow ${language.label} ${choice.version}.
+${build.architecture}`,
+  }
 }
 
 export function composeProject(project: ProjectRecord) {
@@ -141,7 +187,7 @@ function preamble(ctx: PromptContext, output: string) {
 Workspace layout:
 - legacy/     the legacy application — never modify, move or delete anything inside it
 - migration/  machine-readable contracts and the environment used to run tests
-- v2/         the new ${targetOf(ctx.project).label} implementation
+- v2/         the new ${ctx.project.target ? targetOf(ctx.project).label : "modern"} implementation
 
 Rules of engagement:
 - Be efficient: locate code with glob and grep, read only what you need, do not narrate.
@@ -183,6 +229,58 @@ const DISCOVERY_EXAMPLE = {
     { id: "rabbitmq", name: "RabbitMQ", kind: "queue", tech: "rabbitmq", version: "3", usedBy: ["api", "reminders"], env: ["BROKER_URL"], strategy: "container", image: "docker.io/library/rabbitmq:3-alpine", notes: same("") },
     { id: "sms", name: "SMS gateway", kind: "external-api", tech: "twilio", version: "", usedBy: ["reminders"], env: ["SMS_API_URL"], strategy: "mock", image: "", notes: same("POST /messages") },
   ],
+  recommendations: [
+    {
+      kind: "finops",
+      language: "go",
+      version: "1.23",
+      reason: tr(
+        "A JSON API over MySQL with light CPU work: one small static binary serves the same traffic with a fraction of the memory.",
+        "Uma API JSON sobre MySQL com pouco uso de CPU: um binário estático pequeno atende o mesmo tráfego com uma fração da memória.",
+        "Una API JSON sobre MySQL con poco uso de CPU: un binario estático pequeño atiende el mismo tráfico con una fracción de la memoria.",
+      ),
+      stacks: [
+        { id: "stdlib", name: "net/http", components: ["net/http", "go-sql-driver/mysql", "sqlc"], reason: tr("No framework to learn; typed SQL generated from the existing schema.", "Sem framework para aprender; SQL tipado gerado a partir do schema existente.", "Sin framework que aprender; SQL tipado generado desde el esquema existente.") },
+        { id: "chi", name: "chi", components: ["chi", "go-sql-driver/mysql", "sqlc"], reason: tr("Adds route groups and middleware for the auth checks.", "Adiciona grupos de rotas e middleware para as verificações de autenticação.", "Añade grupos de rutas y middleware para las comprobaciones de autenticación.") },
+      ],
+    },
+    {
+      kind: "scale",
+      language: "elixir",
+      version: "1.17",
+      reason: tr(
+        "Backend only, with queued reminders: the BEAM runs thousands of lightweight processes and replaces RabbitMQ workers with supervised jobs.",
+        "Apenas backend, com lembretes em fila: a BEAM roda milhares de processos leves e troca os workers do RabbitMQ por jobs supervisionados.",
+        "Solo backend, con recordatorios en cola: la BEAM ejecuta miles de procesos ligeros y reemplaza los workers de RabbitMQ por jobs supervisados.",
+      ),
+      stacks: [
+        { id: "phoenix", name: "Phoenix", components: ["phoenix", "ecto", "myxql", "oban"], reason: tr("Batteries included, Oban for the reminder jobs.", "Completo, com Oban para os jobs de lembrete.", "Completo, con Oban para los jobs de recordatorio.") },
+        { id: "plug", name: "Plug + Bandit", components: ["plug", "bandit", "ecto", "myxql"], reason: tr("The smallest footprint for a pure JSON API.", "A menor pegada para uma API apenas JSON.", "La menor huella para una API solo JSON.") },
+      ],
+    },
+    {
+      kind: "upgrade",
+      language: "python",
+      version: "3.12",
+      reason: tr(
+        "Keeps the team's language: Python 3.11 to 3.12 with typed request models.",
+        "Mantém a linguagem do time: Python 3.11 para 3.12 com modelos de requisição tipados.",
+        "Mantiene el lenguaje del equipo: Python 3.11 a 3.12 con modelos de petición tipados.",
+      ),
+      stacks: [
+        { id: "fastapi", name: "FastAPI", components: ["fastapi", "pydantic", "sqlalchemy"], reason: tr("Async and typed, close to the current Flask routes.", "Assíncrono e tipado, próximo das rotas Flask atuais.", "Asíncrono y tipado, cercano a las rutas Flask actuales.") },
+        { id: "flask", name: "Flask", components: ["flask", "sqlalchemy"], reason: tr("The smallest change for the team.", "A menor mudança para o time.", "El cambio más pequeño para el equipo.") },
+      ],
+    },
+  ],
+}
+
+const COST_WORDS = ["", "lowest", "moderate", "higher"]
+
+function stackCatalog() {
+  return LANGUAGES.map(
+    (l) => `- ${l.id} (${l.label} ${l.version}, cloud cost ${COST_WORDS[l.cost]}): ${l.stacks.map((s) => `${s.id} = ${s.components.join(" + ")}`).join("; ")}`,
+  ).join("\n")
 }
 
 export function discoverPrompt(ctx: PromptContext) {
@@ -195,6 +293,14 @@ Look at manifests, entry files, configuration, Dockerfiles/compose files, enviro
 - "tech" is a lowercase technology name (express, spring, django, postgresql, redis, kafka, stripe, s3...).
 - Every dependency the running app needs gets a strategy for isolated local runs: "container" (a real throwaway container such as postgres or redis), "mock" (a stub server we write, typical for third-party HTTP APIs) or "skip" (not needed to serve requests).
 - "run" describes how the legacy app is installed and started, the port it listens on and a cheap path that answers HTTP.
+
+Then recommend where to migrate in "recommendations": exactly 3 options, each with 2 stacks, in this order:
+1. kind "finops": the cheapest stack to run at scale for this workload — normally Go.
+2. kind "scale": when the application is a backend (no server-rendered UI), Elixir or Erlang, whose BEAM runtime serves heavy concurrency on little hardware; otherwise another low-cost option such as Rust.
+3. kind "upgrade": the language the application already uses, on its latest long-term-support version (for example Java 17 to 21, Python 3.8 to 3.12, JavaScript to TypeScript on Node.js 22). Use kind "fit" instead, with the closest modern stack, when that language is not in the catalog.
+"language" is a catalog id, "version" the target version, "reason" one or two sentences about this application (its dependencies, traffic shape, what the team runs today). Each stack has an "id" from the catalog when one fits, a "name", its main "components" (framework, the driver for this application's datastores, job or cache libraries) and a short "reason".
+Catalog:
+${stackCatalog()}
 
 JSON shape (example from a different project):
 ${JSON.stringify(DISCOVERY_EXAMPLE, null, 2)}`
@@ -413,6 +519,8 @@ JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`
 }
 
+const EXPLAIN_FIXES = `Explain every fix for two readers. "headline" is one plain sentence for someone who does not read code: what was different and what happens now. "cause" and "change" are the technical detail for engineers. In all three, wrap literal values, fields, status codes, functions and files in backticks and put the key point in **double asterisks**.`
+
 export function reconcilePrompt(ctx: PromptContext) {
   const batch = ctx.batch!
   const parity = ctx.parity!
@@ -435,8 +543,17 @@ differences: ${clipJson(r.comparison.diffs.slice(0, 12))}`,
     fixes: [
       {
         case: "book-too-late",
-        cause: tr("v2 compared against local time, legacy uses UTC", "O v2 comparava com a hora local; o legado usa UTC", "v2 comparaba con la hora local; el legado usa UTC"),
-        change: tr("Use UTC in CheckNotice", "Usar UTC em CheckNotice", "Usar UTC en CheckNotice"),
+        headline: tr(
+          "v2 accepted a booking 23 hours ahead because it read the clock in **local time**; it now answers `422 too_late` like legacy.",
+          "O v2 aceitava uma reserva com 23 horas de antecedência porque lia o relógio em **hora local**; agora responde `422 too_late` como o legado.",
+          "v2 aceptaba una reserva con 23 horas de antelación porque leía el reloj en **hora local**; ahora responde `422 too_late` como el legado.",
+        ),
+        cause: tr(
+          "`booking.CheckNotice` compared `time.Now()` in the container's zone, while legacy compares `datetime.utcnow()` against `slot.starts_at`.",
+          "`booking.CheckNotice` comparava `time.Now()` no fuso do container, enquanto o legado compara `datetime.utcnow()` com `slot.starts_at`.",
+          "`booking.CheckNotice` comparaba `time.Now()` en la zona del contenedor, mientras el legado compara `datetime.utcnow()` con `slot.starts_at`.",
+        ),
+        change: tr("Use `time.Now().UTC()` in `CheckNotice`.", "Usar `time.Now().UTC()` em `CheckNotice`.", "Usar `time.Now().UTC()` en `CheckNotice`."),
         files: ["v2/internal/domain/booking/notice.go"],
       },
     ],
@@ -449,6 +566,8 @@ Task: the side-by-side run of batch "${batch.title.en}" found ${parity.total - p
 ${mismatches}
 
 Verify once from v2/: \`${target.verify}\`.
+
+${EXPLAIN_FIXES}
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`
@@ -476,15 +595,25 @@ differences: ${clipJson(r.expectation.diffs.slice(0, 12))}`,
     fixes: [
       {
         case: "book-ok",
-        cause: tr("The token of the login case was written literally", "O token do caso de login foi escrito literalmente", "El token del caso de login se escribió literalmente"),
+        headline: tr(
+          "The test sent an **expired sign-in token**; it now signs in first and reuses that token.",
+          "O teste enviava um **token de login expirado**; agora faz login antes e reutiliza esse token.",
+          "La prueba enviaba un **token de inicio de sesión caducado**; ahora inicia sesión antes y reutiliza ese token.",
+        ),
+        cause: tr("The `Authorization` header held a token written literally instead of the one `login-patient` returns.", "O cabeçalho `Authorization` tinha um token escrito literalmente em vez do que `login-patient` devolve.", "La cabecera `Authorization` tenía un token escrito literalmente en lugar del que devuelve `login-patient`."),
         action: "request",
-        change: tr("Authorization uses {{login-patient.$.token}}", "Authorization usa {{login-patient.$.token}}", "Authorization usa {{login-patient.$.token}}"),
+        change: tr("`Authorization` uses `{{login-patient.$.token}}`.", "`Authorization` usa `{{login-patient.$.token}}`.", "`Authorization` usa `{{login-patient.$.token}}`."),
       },
       {
         case: "book-too-late",
-        cause: tr("Legacy checks notice before the slot exists", "O legado verifica a antecedência antes de o horário existir", "El legado comprueba la antelación antes de que exista el horario"),
+        headline: tr(
+          "Legacy checks that the **slot exists** before the 24-hour notice, so it answers `404` here.",
+          "O legado verifica se o **horário existe** antes da antecedência de 24 horas, então responde `404` aqui.",
+          "El legado comprueba que el **horario exista** antes de la antelación de 24 horas, así que responde `404` aquí.",
+        ),
+        cause: tr("`book()` loads the slot before calling `check_notice`.", "`book()` carrega o horário antes de chamar `check_notice`.", "`book()` carga el horario antes de llamar a `check_notice`."),
         action: "expectation",
-        change: tr("Expects 404 slot_not_found", "Espera 404 slot_not_found", "Espera 404 slot_not_found"),
+        change: tr("Expects `404 slot_not_found`.", "Espera `404 slot_not_found`.", "Espera `404 slot_not_found`."),
       },
     ],
     notes: [],
@@ -500,7 +629,7 @@ Keep cases that already match unchanged and keep ids stable. Do not change legac
 
 ${listing}
 
-Record every change below; "action" is one of request, setup, expectation, removed.
+Record every change below; "action" is one of request, setup, expectation, removed. ${EXPLAIN_FIXES}
 
 JSON shape (example from a different project):
 ${JSON.stringify(example, null, 2)}`

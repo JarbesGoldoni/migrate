@@ -57,9 +57,9 @@ describe("Pipeline", () => {
     const project = await pipeline.createProject({ source: repo, model: { providerID: "p", modelID: "m" } })
     bus.subscribe(project.id, (e) => events.push(e.type))
     expect(project.branch).toBe("migrate/v2")
-    expect(project.target).toBe("go")
+    expect(project.target).toBeUndefined()
     expect(project.ports.v2).toBeGreaterThan(project.ports.legacy)
-    expect(targetLabel(project)).toBe("Go")
+    expect(targetLabel(project)).toBe("Go 1.23")
 
     expect(await pipeline.start(project.id, "entrypoints")).toEqual({ started: false, reason: "Map the architecture first" })
     expect((await pipeline.start(project.id, "rules", "ghost")).reason).toBe("Unknown batch ghost")
@@ -123,7 +123,7 @@ describe("Pipeline", () => {
         ],
       }),
     })
-    expect((await pipeline.start(project.id, "port", "catalog")).reason).toBe("Run the tests against legacy before building v2")
+    expect((await pipeline.start(project.id, "port", "catalog")).reason).toBe("Choose where to migrate first")
     expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Write the characterization tests first")
     await pipeline.start(project.id, "tests", "catalog")
     snapshot = await waitPhase(pipeline, project.id, "tests:catalog")
@@ -149,6 +149,8 @@ describe("Pipeline", () => {
     expect(snapshot.state.phases["legacy:catalog"].note).toBe("4/4 responses matched the predicted behavior")
     expect((await pipeline.start(project.id, "verify", "catalog")).reason).toBe("Every legacy response already matches the prediction")
 
+    const chosen = await pipeline.updateProject(project.id, { stack: { language: "go", stack: "chi" } })
+    expect(chosen).toMatchObject({ target: "go", stack: { stack: "chi", name: "chi", version: "1.23" } })
     engine.outputs.port = () => ({ path: artifacts.batch("catalog", "port"), data: { batch: "catalog", files: [{ path: "v2/main.go" }] } })
     await pipeline.start(project.id, "port", "catalog")
     snapshot = await waitPhase(pipeline, project.id, "port:catalog")
@@ -232,6 +234,13 @@ describe("Pipeline", () => {
     const updated = await pipeline.updateProject(project.id, { model: { providerID: "x", modelID: "y" }, target: "unknown" })
     expect(updated.model).toEqual({ providerID: "x", modelID: "y" })
     expect(updated.target).toBe("python")
+    expect((await pipeline.updateProject(project.id, { stack: { language: "Elixir", name: "Phoenix" } })).stack).toEqual({
+      language: "elixir",
+      version: "1.17",
+      stack: "phoenix",
+      name: "Phoenix",
+      components: ["phoenix", "ecto", "bandit"],
+    })
     await expect(pipeline.snapshot("nope")).rejects.toBeInstanceOf(NotFoundError)
     await expect(pipeline.createProject({ source: join(repo, "missing") })).rejects.toThrow("Folder not found")
     expect((await pipeline.start(project.id, "bogus" as never)).reason).toBe("Unknown phase bogus")

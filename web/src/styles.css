@@ -135,17 +135,11 @@ body {
   background-size: 48px 48px;
 }
 
-/* Syntax colors for sugar-high */
-:root {
-  --sh-class: #7dd3fc;
-  --sh-identifier: #dfe4ee;
-  --sh-sign: #7c86a3;
-  --sh-property: #93c5fd;
-  --sh-entity: #67e8f9;
-  --sh-jsxliterals: #c4b5fd;
-  --sh-string: #fcd34d;
-  --sh-keyword: #f0abfc;
-  --sh-comment: #5b6582;
+/* Native menus (a fallback: the app uses its own Select) */
+select,
+option {
+  background-color: var(--color-ink-850);
+  color: #dfe4ee;
 }
 
 /* React Flow, dressed for the dark ink theme */

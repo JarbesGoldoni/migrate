@@ -6,33 +6,37 @@ import {
   CircleX,
   Container,
   CornerDownRight,
+  Crosshair,
   Folder,
   FolderGit2,
   GitBranch,
+  GitCompareArrows,
   House,
   Layers,
-  Leaf,
   LoaderCircle,
   type LucideIcon,
-  PiggyBank,
+  Network,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
   Wand2,
+  Waypoints,
 } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { type ReactNode, useEffect, useState } from "react"
+import { LANGUAGES } from "../../../src/shared/stacks"
 import type { EngineInfo, FsListing, ModelRef, Preflight, PreflightCheck } from "../../../src/shared/types"
 import { Backdrop, Logo, TechIcon } from "../components/brand"
+import { EffortPicker } from "../components/EffortPicker"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { ModelPicker } from "../components/ModelPicker"
-import { Badge, Button, Panel } from "../components/ui"
-import { api, type Target } from "../lib/api"
+import { Button, Panel } from "../components/ui"
+import { api } from "../lib/api"
 import { cn } from "../lib/format"
 import { useI18n } from "../lib/i18n"
 import { isKey, type Key } from "../lib/i18n-core"
 import { navigate } from "../lib/router"
-import { MARKER_TECH, TARGET_TECH } from "../lib/tech"
+import { MARKER_TECH } from "../lib/tech"
 
 const CHECK_ICONS: Record<string, LucideIcon> = {
   project: FolderGit2,
@@ -44,6 +48,13 @@ const CHECK_ICONS: Record<string, LucideIcon> = {
 
 const CHECK_IDS = ["project", "engine", "git", "container", "compose", "go"]
 
+const NEXT_STEPS: Array<{ icon: LucideIcon; key: Key; tone: string }> = [
+  { icon: Network, key: "new.step.map", tone: "text-cyan-300" },
+  { icon: Crosshair, key: "new.step.target", tone: "text-emerald-300" },
+  { icon: Waypoints, key: "new.step.batches", tone: "text-amber-300" },
+  { icon: GitCompareArrows, key: "new.step.prove", tone: "text-violet-300" },
+]
+
 export function NewMigration({ sample }: { sample: boolean }) {
   const { t, locale } = useI18n()
   const [listing, setListing] = useState<FsListing>()
@@ -53,8 +64,6 @@ export function NewMigration({ sample }: { sample: boolean }) {
   const [checking, setChecking] = useState(false)
   const [engine, setEngine] = useState<EngineInfo>()
   const [model, setModel] = useState<ModelRef>()
-  const [targets, setTargets] = useState<Target[]>([])
-  const [target, setTarget] = useState("go")
   const [starting, setStarting] = useState(false)
   const [creatingSample, setCreatingSample] = useState(false)
   const [error, setError] = useState<string>()
@@ -93,7 +102,6 @@ export function NewMigration({ sample }: { sample: boolean }) {
         setModel((current) => current ?? info.defaultModel)
       })
       .catch(() => {})
-    api.targets().then(setTargets).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -111,7 +119,7 @@ export function NewMigration({ sample }: { sample: boolean }) {
     if (!selected) return
     setStarting(true)
     try {
-      const project = await api.create(selected, model, target, locale)
+      const project = await api.create(selected, model, locale)
       await api.run(project.id, "discover")
       navigate(`/m/${project.id}/discover`)
     } catch (e) {
@@ -119,6 +127,8 @@ export function NewMigration({ sample }: { sample: boolean }) {
       setStarting(false)
     }
   }
+
+  const modelOption = engine?.models.find((m) => m.providerID === model?.providerID && m.modelID === model?.modelID)
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="relative min-h-screen">
@@ -244,7 +254,24 @@ export function NewMigration({ sample }: { sample: boolean }) {
                     <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("new.model")}</div>
                     <div className="mt-3">
                       {engine?.ready ? (
-                        <ModelPicker models={engine.models} value={model} onChange={setModel} />
+                        <div className="flex gap-2">
+                          <EffortPicker
+                            className="w-40 shrink-0"
+                            variants={modelOption?.variants}
+                            value={model?.variant}
+                            onChange={(variant) => model && setModel({ providerID: model.providerID, modelID: model.modelID, ...(variant ? { variant } : {}) })}
+                          />
+                          <ModelPicker
+                            className="min-w-0 flex-1"
+                            models={engine.models}
+                            value={model}
+                            onChange={(next) => {
+                              const option = engine.models.find((m) => m.providerID === next.providerID && m.modelID === next.modelID)
+                              const variant = model?.variant && option?.variants?.includes(model.variant) ? model.variant : undefined
+                              setModel({ ...next, ...(variant ? { variant } : {}) })
+                            }}
+                          />
+                        </div>
                       ) : (
                         <div className="flex h-11 items-center gap-2 rounded-xl bg-white/[0.03] px-3 text-sm ring-1 ring-white/10">
                           {engine ? (
@@ -261,60 +288,35 @@ export function NewMigration({ sample }: { sample: boolean }) {
                         </div>
                       )}
                     </div>
-                    <div className="mt-5 flex items-center gap-2">
-                      <span className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("new.migrateTo")}</span>
-                      <span className="flex-1" />
-                      <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                        <PiggyBank className="size-3.5" />
-                        {t("new.cloudCost")}
+
+                    <div className="mt-6 text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase">{t("new.next")}</div>
+                    <ol className="mt-3 flex flex-col">
+                      {NEXT_STEPS.map((step, i) => (
+                        <motion.li
+                          key={step.key}
+                          initial={{ opacity: 0, x: 8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 + i * 0.07 }}
+                          className="relative flex gap-3 pb-3 last:pb-0"
+                        >
+                          {i < NEXT_STEPS.length - 1 && <span className="absolute top-8 left-[15px] h-[calc(100%-26px)] w-px bg-white/10" />}
+                          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.04] ring-1 ring-white/[0.08]">
+                            <step.icon className={cn("size-4", step.tone)} />
+                          </span>
+                          <span className="pt-1.5 text-sm text-slate-300">{t(step.key)}</span>
+                        </motion.li>
+                      ))}
+                    </ol>
+                    <div className="mt-4 flex items-center gap-3 rounded-xl bg-emerald-400/[0.04] px-3 py-2.5 ring-1 ring-emerald-400/15">
+                      <span className="flex shrink-0 -space-x-1.5">
+                        {["go", "elixir", "erlang"].map((id) => (
+                          <span key={id} className="grid size-7 place-items-center rounded-full bg-ink-900 ring-1 ring-white/10">
+                            <TechIcon tech={LANGUAGES.find((l) => l.id === id)?.icon} size={14} />
+                          </span>
+                        ))}
                       </span>
+                      <p className="text-xs leading-relaxed text-slate-400">{t("new.targetLater")}</p>
                     </div>
-                    <div className="mt-3 flex max-h-[430px] flex-col gap-2 overflow-y-auto pr-1">
-                      {(targets.length ? targets : FALLBACK_TARGETS).map((option) => {
-                        const blurb = `target.${option.id}`
-                        const selected = target === option.id
-                        return (
-                          <button
-                            type="button"
-                            key={option.id}
-                            onClick={() => setTarget(option.id)}
-                            className={cn(
-                              "relative flex cursor-pointer items-center gap-3 rounded-xl p-3 text-left ring-1 transition",
-                              selected
-                                ? "bg-cyan-400/[0.07] ring-cyan-400/40"
-                                : option.recommended
-                                  ? "bg-emerald-400/[0.03] ring-emerald-400/25 hover:bg-emerald-400/[0.06]"
-                                  : "bg-white/[0.02] ring-white/[0.07] hover:bg-white/[0.05]",
-                            )}
-                          >
-                            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/40">
-                              <TechIcon tech={TARGET_TECH[option.id] ?? option.id} size={22} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-white">
-                                {option.label}
-                                {option.recommended && (
-                                  <Badge tone="emerald" icon={Leaf}>
-                                    {t("new.finops")}
-                                  </Badge>
-                                )}
-                              </div>
-                              {isKey(blurb) && <div className="text-xs text-slate-400">{t(blurb)}</div>}
-                            </div>
-                            <CostMeter cost={option.cost} />
-                            {selected && (
-                              <motion.span layoutId="target-check">
-                                <CircleCheck className="size-5 shrink-0 text-cyan-300" />
-                              </motion.span>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                    <p className="mt-3 flex gap-2 text-xs leading-relaxed text-slate-500">
-                      <Leaf className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
-                      {t("new.finopsHint")}
-                    </p>
                   </Panel>
 
                   <Button variant="primary" size="lg" className="w-full" loading={starting} disabled={!preflight?.ready || !model} icon={<ArrowRight className="size-5" />} onClick={start}>
@@ -330,24 +332,6 @@ export function NewMigration({ sample }: { sample: boolean }) {
         </div>
       </div>
     </motion.div>
-  )
-}
-
-const FALLBACK_TARGETS: Target[] = [{ id: "go", label: "Go", cost: 1, recommended: true }]
-
-function CostMeter({ cost }: { cost: 1 | 2 | 3 }) {
-  const { t } = useI18n()
-  const tone = cost === 1 ? "bg-emerald-400" : cost === 2 ? "bg-amber-400" : "bg-rose-400"
-  const label = t(`new.cost.${cost}` as Key)
-  return (
-    <span className="flex shrink-0 flex-col items-end gap-1" title={`${t("new.cloudCost")}: ${label}`}>
-      <span className="flex items-end gap-0.5">
-        {[1, 2, 3].map((bar) => (
-          <span key={bar} className={cn("w-1.5 rounded-sm", bar <= cost ? tone : "bg-white/10")} style={{ height: 4 + bar * 4 }} />
-        ))}
-      </span>
-      <span className="text-[10px] text-slate-500">{label}</span>
-    </span>
   )
 }
 

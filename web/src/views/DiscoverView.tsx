@@ -1,4 +1,5 @@
-import { ArrowRight, Boxes, KeyRound, Network, Terminal, Waypoints } from "lucide-react"
+import { ArrowRight, Boxes, Crosshair, KeyRound, Network, Terminal, Waypoints } from "lucide-react"
+import { languageById } from "../../../src/shared/stacks"
 import { motion } from "motion/react"
 import type { Dependency } from "../../../src/shared/contracts"
 import type { Activity } from "../../../src/shared/types"
@@ -128,23 +129,45 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
 
           {!replaying && !snapshot.entrypoints && phaseStatus(snapshot, "entrypoints") !== "running" && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-              <Panel className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-amber-400/[0.06] to-cyan-400/[0.06] p-5">
-                <Waypoints className="size-6 text-cyan-300" />
-                <div className="flex-1">
-                  <div className="font-medium text-white">{t("discover.nextTitle")}</div>
-                  <div className="text-sm text-slate-400">{t("discover.nextText")}</div>
-                </div>
-                <Button
-                  variant="primary"
-                  icon={<ArrowRight className="size-4" />}
-                  onClick={async () => {
-                    await api.run(id, "entrypoints")
-                    navigate(`/m/${id}/entrypoints`)
-                  }}
-                >
-                  {t("discover.nextAction")}
-                </Button>
-              </Panel>
+              {snapshot.project.target ? (
+                <Panel className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-amber-400/[0.06] to-cyan-400/[0.06] p-5">
+                  <Waypoints className="size-6 text-cyan-300" />
+                  <div className="flex-1">
+                    <div className="font-medium text-white">{t("discover.nextTitle")}</div>
+                    <div className="text-sm text-slate-400">{t("discover.nextText")}</div>
+                  </div>
+                  <Button
+                    variant="primary"
+                    icon={<ArrowRight className="size-4" />}
+                    onClick={async () => {
+                      await api.run(id, "entrypoints")
+                      navigate(`/m/${id}/entrypoints`)
+                    }}
+                  >
+                    {t("discover.nextAction")}
+                  </Button>
+                </Panel>
+              ) : (
+                <Panel className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-emerald-400/[0.06] via-violet-400/[0.05] to-cyan-400/[0.06] p-5">
+                  <Crosshair className="size-6 text-emerald-300" />
+                  <div className="flex-1">
+                    <div className="font-medium text-white">{t("discover.chooseTitle")}</div>
+                    <div className="text-sm text-slate-400">{t("discover.chooseText")}</div>
+                  </div>
+                  {discovery.recommendations.length > 0 && (
+                    <span className="flex items-center gap-1.5">
+                      {discovery.recommendations.map((r) => (
+                        <span key={`${r.language}-${r.version}`} className="grid size-8 place-items-center rounded-lg bg-black/30 ring-1 ring-white/10">
+                          <TechIcon tech={languageById(r.language)?.icon} size={16} />
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  <Button variant="primary" icon={<ArrowRight className="size-4" />} onClick={() => navigate(`/m/${id}/target`)}>
+                    {t("discover.chooseAction")}
+                  </Button>
+                </Panel>
+              )}
             </motion.div>
           )}
         </>

@@ -4,17 +4,18 @@
 
 [![CI](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml/badge.svg)](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml)
 
-Point it at an application. It maps the architecture, finds every entry point, extracts the business rules, writes tests against the real legacy app, ports the code and runs both side by side until every response matches.
+Point it at an application. It maps the architecture, suggests where to migrate, finds every entry point, extracts the business rules, writes tests against the real legacy app, ports the code and runs both side by side until every response matches.
 
 ## How it works
 
 1. **Map** the architecture and dependencies
-2. **Find** every entry point and group them into batches
-3. **Run legacy** in containers, with mocks for third-party APIs
-4. **Extract** the business rules of a batch
-5. **Characterize** it with real HTTP tests, run against legacy first
-6. **Port** it to the new stack
-7. **Prove parity**: both sides get the same requests; differences are reconciled
+2. **Choose the target**: the agent suggests three directions for this app, and you pick the language and stack
+3. **Find** every entry point and group them into batches
+4. **Run legacy** in containers, with mocks for third-party APIs
+5. **Extract** the business rules of a batch
+6. **Characterize** it with real HTTP tests, run against legacy first
+7. **Port** it to the new stack
+8. **Prove parity**: both sides get the same requests; differences are reconciled
 
 Every step runs once, straight through. The work happens on its own branch in a separate folder — your code is never touched.
 
@@ -22,35 +23,31 @@ Every step runs once, straight through. The work happens on its own branch in a 
 
 ```sh
 bun install
-bun run build          # web app and CLI
-bun run build:app      # optional: the app window (needs Rust; on Linux also WebKitGTK)
-
-node dist/cli.js auth login   # connect an AI provider once
-node dist/cli.js              # opens the app (add --browser to use your browser)
+bun run build
+node dist/cli.js
 ```
 
+The command checks that [opencode](https://opencode.ai) is installed (and offers to install it), shows the AI providers opencode is signed in to and lets you keep them or sign in to another one, then prints a link to the app on `localhost`. Press `o` to open it in your browser, `q` to quit. Add `--open` to open the browser straight away, or `--yes` to skip the questions.
+
 You need Git and Docker or Podman. Everything runs on your machine, including WSL.
+
+## Where it can migrate to
+
+After the architecture map, the agent suggests three options — usually **Go** for the lowest cloud bill, **Elixir or Erlang** to scale a backend on little hardware, and an **upgrade** of the language you already run (Java 17 → 21, for example) — each with two stacks. You can also pick any language and stack yourself:
+
+| Cloud cost | Languages |
+|---|---|
+| lowest | Go, Elixir, Erlang, Rust |
+| moderate | C#, TypeScript, Kotlin, Scala |
+| higher | Java, Python, PHP, Ruby |
 
 ## In the app
 
 - **English, Português and Español** — including everything the agent writes
-- **Replay** a finished migration to show someone how it went
-- **Your migrations** — open, replay or delete them
-- **Open in your IDE** or file manager, and **bring the branch** into your own repository
-
-## Target stacks
-
-| Stack | Cloud cost |
-|---|---|
-| **Go** — recommended | lowest |
-| Rust | lowest |
-| C# (.NET) | moderate |
-| TypeScript (Bun + Hono) | moderate |
-| Kotlin (Ktor) | moderate |
-| Java (Spring Boot) | higher |
-| Python (FastAPI) | higher |
-
-Go is the default: small static binaries, low memory and fast startup mean fewer, smaller instances for the same traffic.
+- **Model and effort**: pick any model opencode offers, and its reasoning effort
+- **Code**: browse legacy and v2 like an editor, with files lighting up as the agent writes them
+- **Plain explanations** of every fix, with the technical detail one click away
+- **Replay** a finished migration, **open it in your IDE**, **bring the branch** into your repository, or delete it
 
 ## Development
 

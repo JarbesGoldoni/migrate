@@ -3,14 +3,13 @@ import { readdir, readFile, stat } from "node:fs/promises"
 import { extname, join, normalize, relative, resolve, sep } from "node:path"
 import { Hono } from "hono"
 import { streamSSE } from "hono/streaming"
-import { isBatchPhase, isLocale, isProjectPhase, type HttpRequestSpec, type ServerEvent } from "../shared/types"
+import { isBatchPhase, isLocale, isProjectPhase, type HttpRequestSpec, type ModelRef, type ServerEvent } from "../shared/types"
 import type { EventBus } from "./bus"
 import { systemOpener, type WorkspaceOpener } from "./editors"
 import type { Engine } from "./engine/engine"
 import { listDirectory } from "./fsbrowse"
 import { NotFoundError, type Pipeline } from "./pipeline"
 import { runPreflight } from "./preflight"
-import { TARGETS } from "./prompts"
 import { createSample } from "./sample"
 import type { Store } from "./store"
 import type { Exec } from "./util/exec"
@@ -52,10 +51,6 @@ export function createApp(deps: AppDeps) {
 
   app.get("/api/engine", async (c) => c.json(await engine.info()))
 
-  app.get("/api/targets", (c) =>
-    c.json(Object.entries(TARGETS).map(([id, t]) => ({ id, label: t.label, cost: t.cost, recommended: Boolean(t.recommended) }))),
-  )
-
   app.get("/api/editors", (c) => c.json(opener.editors()))
 
   app.get("/api/fs", async (c) => {
@@ -81,8 +76,9 @@ export function createApp(deps: AppDeps) {
   app.post("/api/projects", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
       source?: string
-      model?: { providerID: string; modelID: string }
+      model?: ModelRef
       target?: string
+      stack?: unknown
       language?: string
     }
     if (!body.source) return c.json({ error: "source is required" }, 400)
@@ -91,6 +87,7 @@ export function createApp(deps: AppDeps) {
         source: body.source,
         model: body.model,
         target: body.target,
+        stack: body.stack,
         language: isLocale(body.language) ? body.language : undefined,
       }),
     )
@@ -102,14 +99,16 @@ export function createApp(deps: AppDeps) {
 
   app.patch("/api/projects/:id", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
-      model?: { providerID: string; modelID: string }
+      model?: ModelRef
       target?: string
+      stack?: unknown
       language?: string
     }
     return c.json(
       await pipeline.updateProject(c.req.param("id"), {
         model: body.model,
         target: body.target,
+        stack: body.stack,
         language: isLocale(body.language) ? body.language : undefined,
       }),
     )
@@ -176,13 +175,18 @@ export function createApp(deps: AppDeps) {
       .find((f) => f.startsWith(root + sep) && existsSync(f))
     const info = file ? await stat(file) : undefined
     if (!file || !info?.isFile()) return c.json({ error: "File not found" }, 404)
+    const path = relative(root, file)
+    if (isCompiled(path)) return c.json({ path, from: 0, to: 0, total: 0, lines: [], size: info.size, binary: true })
     if (info.size > 2_000_000) return c.json({ error: "File too large" }, 413)
-    const lines = (await readFile(file, "utf8")).split("\n")
+    const buffer = await readFile(file)
+    if (buffer.subarray(0, 8000).includes(0)) return c.json({ path, from: 0, to: 0, total: 0, lines: [], size: info.size, binary: true })
+    const lines = buffer.toString("utf8").split("\n")
     const start = Number.parseInt(c.req.query("start") ?? "", 10)
     const end = Number.parseInt(c.req.query("end") ?? "", 10)
+    const cap = c.req.query("full") === "1" ? 20_000 : 400
     const from = Number.isFinite(start) ? Math.max(1, start - 4) : 1
-    const to = Number.isFinite(end) ? Math.min(lines.length, Math.max(end, start) + 4) : Math.min(lines.length, 400)
-    return c.json({ path: relative(root, file), from, to, total: lines.length, lines: lines.slice(from - 1, to) })
+    const to = Number.isFinite(end) ? Math.min(lines.length, Math.max(end, start) + 4) : Math.min(lines.length, cap)
+    return c.json({ path, from, to, total: lines.length, lines: lines.slice(from - 1, to), size: info.size })
   })
 
   app.get("/api/projects/:id/tree", async (c) => {
@@ -190,7 +194,7 @@ export function createApp(deps: AppDeps) {
     const root = resolve(project.workspace)
     const dir = resolve(root, (c.req.query("dir") ?? "v2").replace(/^\/+/, ""))
     if (!dir.startsWith(root + sep) && dir !== root) return c.json({ error: "Outside workspace" }, 400)
-    return c.json({ files: await listFiles(dir, root) })
+    return c.json(await listFiles(dir, root))
   })
 
   app.get("/api/projects/:id/events", async (c) => {
@@ -248,20 +252,52 @@ export function createApp(deps: AppDeps) {
   return app
 }
 
-const SKIP = new Set([".git", "node_modules", "vendor", "bin", ".gitkeep"])
+// Folders people never want to browse: dependencies, caches and build output.
+const SKIP = new Set([
+  ".git",
+  "node_modules",
+  "vendor",
+  ".gitkeep",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".venv",
+  "venv",
+  "target",
+  "_build",
+  "deps",
+  ".gradle",
+  ".idea",
+  ".vscode",
+  "obj",
+  "bin",
+  "coverage",
+  ".next",
+  ".turbo",
+  ".DS_Store",
+])
 
-async function listFiles(dir: string, root: string, limit = 500) {
+const COMPILED = /\.(pyc|pyo|class|o|obj|so|dll|dylib|exe|jar|war|beam|wasm|a|lib)$/i
+
+export function isCompiled(path: string) {
+  return COMPILED.test(path)
+}
+
+async function listFiles(dir: string, root: string, limit = 5000) {
   const files: string[] = []
+  let truncated = false
   const walk = async (current: string) => {
-    if (files.length >= limit) return
     const entries = await readdir(current, { withFileTypes: true }).catch(() => [])
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (SKIP.has(entry.name)) continue
+      if (SKIP.has(entry.name) || entry.name.endsWith(".tmp")) continue
       const full = join(current, entry.name)
       if (entry.isDirectory()) await walk(full)
+      else if (isCompiled(entry.name)) continue
       else if (files.length < limit) files.push(relative(root, full))
+      else truncated = true
     }
   }
   await walk(dir)
-  return files
+  return { files, truncated }
 }

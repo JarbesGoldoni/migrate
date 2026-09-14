@@ -1,6 +1,8 @@
 import {
   BadgeCheck,
+  Code2,
   Container,
+  Crosshair,
   FlaskConical,
   FolderGit2,
   GitBranch,
@@ -19,13 +21,17 @@ import {
   Waypoints,
 } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react"
-import type { EngineInfo, PhaseStatus, ProjectPhase, RuntimeStatus } from "../../../src/shared/types"
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import { stackOf } from "../../../src/shared/stacks"
+import type { EngineInfo, ModelRef, PhaseStatus, ProjectPhase, RuntimeStatus } from "../../../src/shared/types"
 import { ActivityFeed } from "../components/ActivityFeed"
-import { Logo, TechIcon } from "../components/brand"
+import { Logo } from "../components/brand"
+import { CodeExplorer } from "../components/CodeExplorer"
+import { EffortPicker } from "../components/EffortPicker"
 import { LanguageSwitcher } from "../components/LanguageSwitcher"
 import { ModelPicker } from "../components/ModelPicker"
 import { ReplayBar, ReplayFinished } from "../components/ReplayBar"
+import { StackLabel, stackTitle } from "../components/stack"
 import { WorkspaceActions } from "../components/WorkspaceActions"
 import { Badge, Button, CountUp, StatusIcon } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
@@ -36,12 +42,13 @@ import { batchProgress, canReplay, hasOutput, isRunning, PROJECT_STEPS, phaseSta
 import { ReplayContext, useProject, useProjectStore, useReplayTicker } from "../lib/project"
 import { frameAt, viewFor } from "../lib/replay"
 import { navigate } from "../lib/router"
-import { batchIcon, TARGET_LABEL, TARGET_TECH } from "../lib/tech"
+import { batchIcon } from "../lib/tech"
 import { BatchView } from "../views/BatchView"
 import { DiscoverView } from "../views/DiscoverView"
 import { EntrypointsView } from "../views/EntrypointsView"
 import { EnvironmentView } from "../views/EnvironmentView"
 import { RolloutView } from "../views/RolloutView"
+import { TargetView } from "../views/TargetView"
 
 const STEP_ICONS: Record<ProjectPhase, LucideIcon> = { discover: Network, entrypoints: Waypoints, environment: Container }
 
@@ -49,7 +56,9 @@ function defaultView(snapshot: Snapshot) {
   const latest = Object.entries(snapshot.state.phases)
     .filter(([, state]) => state.startedAt)
     .sort((a, b) => (b[1].startedAt ?? 0) - (a[1].startedAt ?? 0))[0]?.[0]
-  return latest ? viewFor(latest) : "discover"
+  const view = latest ? viewFor(latest) : "discover"
+  // Right after the architecture map, the next decision is where to migrate.
+  return view === "discover" && snapshot.discovery && !snapshot.project.target ? "target" : view
 }
 
 export function ProjectScreen({ id, view }: { id: string; view: string }) {
@@ -118,6 +127,7 @@ export function ProjectScreen({ id, view }: { id: string; view: string }) {
   const shown = frame?.snapshot ?? snapshot
   const feed = frame?.snapshot.activity ?? activity
   const current = view && view !== "replay" ? view : defaultView(shown)
+  const codeView = current === "code" || current.startsWith("code/")
 
   return (
     <ReplayContext.Provider value={{ active: Boolean(replay), realTime: frame?.realTime }}>
@@ -126,6 +136,7 @@ export function ProjectScreen({ id, view }: { id: string; view: string }) {
         <div className="pointer-events-none absolute -top-40 left-1/3 size-[500px] rounded-full bg-cyan-500/[0.06] blur-[120px]" />
         <TopBar
           snapshot={shown}
+          codeView={codeView}
           engine={engine}
           connected={connected}
           replaying={Boolean(replay)}
@@ -136,14 +147,29 @@ export function ProjectScreen({ id, view }: { id: string; view: string }) {
           onToggleFeed={() => setFeedOpen((o) => !o)}
         />
         <div className="relative flex min-h-0 flex-1">
-          <PhaseRail snapshot={shown} current={current} />
-          <main className="min-w-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-6xl px-8 py-8">
-              <motion.div key={current} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
-                {renderView(current, shown, feed)}
-              </motion.div>
-            </div>
-          </main>
+          {codeView ? (
+            <main className="min-w-0 flex-1 p-3">
+              <CodeExplorer
+                key={current}
+                projectId={id}
+                activity={feed}
+                initialPath={current.startsWith("code/") ? current.slice("code/".length) : undefined}
+                className="h-full"
+                onBack={() => navigate(`/m/${id}`)}
+              />
+            </main>
+          ) : (
+            <>
+              <PhaseRail snapshot={shown} current={current} />
+              <main className="min-w-0 flex-1 overflow-y-auto">
+                <div className="mx-auto max-w-6xl px-8 py-8">
+                  <motion.div key={current} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease: "easeOut" }}>
+                    {renderView(current, shown, feed)}
+                  </motion.div>
+                </div>
+              </main>
+            </>
+          )}
           <AnimatePresence initial={false}>
             {feedOpen && (
               <motion.aside
@@ -174,11 +200,13 @@ function renderView(view: string, snapshot: Snapshot, activity: Snapshot["activi
   if (view === "entrypoints") return <EntrypointsView snapshot={snapshot} activity={activity} />
   if (view === "environment") return <EnvironmentView snapshot={snapshot} activity={activity} />
   if (view === "rollout") return <RolloutView snapshot={snapshot} />
+  if (view === "target") return <TargetView snapshot={snapshot} />
   return <DiscoverView snapshot={snapshot} activity={activity} />
 }
 
 function TopBar({
   snapshot,
+  codeView,
   engine,
   connected,
   replaying,
@@ -189,6 +217,7 @@ function TopBar({
   onToggleFeed,
 }: {
   snapshot: Snapshot
+  codeView: boolean
   engine?: EngineInfo
   connected: boolean
   replaying: boolean
@@ -200,6 +229,12 @@ function TopBar({
 }) {
   const { t } = useI18n()
   const project = snapshot.project
+  const model = project.model ?? engine?.defaultModel
+  const modelOption = engine?.models.find((m) => m.providerID === model?.providerID && m.modelID === model?.modelID)
+  const saveModel = async (next: ModelRef) => {
+    await api.update(project.id, { model: next })
+    void useProjectStore.getState().refresh()
+  }
   return (
     <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-white/5 bg-ink-950/70 px-4 backdrop-blur-xl">
       <button type="button" onClick={() => navigate("/")} className="cursor-pointer" title={t("project.backHome")}>
@@ -219,15 +254,20 @@ function TopBar({
       <Badge icon={GitBranch} className="hidden md:inline-flex">
         {project.branch}
       </Badge>
-      <span className="hidden items-center gap-1.5 text-xs text-slate-500 xl:flex">
-        {t("project.to")} <TechIcon tech={TARGET_TECH[project.target] ?? project.target} size={14} />
-        {TARGET_LABEL[project.target] ?? project.target}
-      </span>
+      <StackLabel project={project} className="hidden xl:flex" />
       <div className="flex-1" />
       {replaying ? (
         <ReplayBar />
       ) : (
         <>
+          <Button
+            size="sm"
+            variant={codeView ? "subtle" : "outline"}
+            icon={<Code2 className="size-3.5 text-cyan-300" />}
+            onClick={() => navigate(codeView ? `/m/${project.id}` : `/m/${project.id}/code`)}
+          >
+            {t("code.open")}
+          </Button>
           <WorkspaceActions project={project} />
           <Button
             size="sm"
@@ -242,16 +282,29 @@ function TopBar({
           </Button>
           <RuntimeControls snapshot={snapshot} />
           {engine?.ready && (
-            <ModelPicker
-              compact
-              className="hidden w-60 2xl:block"
-              models={engine.models}
-              value={project.model ?? engine.defaultModel}
-              onChange={async (model) => {
-                await api.update(project.id, { model })
-                void useProjectStore.getState().refresh()
-              }}
-            />
+            <>
+              <EffortPicker
+                compact
+                className="hidden w-36 2xl:block"
+                variants={modelOption?.variants}
+                value={model?.variant}
+                onChange={(variant) =>
+                  model && saveModel({ providerID: model.providerID, modelID: model.modelID, ...(variant ? { variant } : {}) })
+                }
+              />
+              <ModelPicker
+                compact
+                className="hidden w-60 2xl:block"
+                models={engine.models}
+                value={model}
+                onChange={(next) => {
+                  const option = engine.models.find((m) => m.providerID === next.providerID && m.modelID === next.modelID)
+                  // Keep the effort when the new model offers the same level.
+                  const variant = model?.variant && option?.variants?.includes(model.variant) ? model.variant : undefined
+                  return saveModel({ ...next, ...(variant ? { variant } : {}) })
+                }}
+              />
+            </>
           )}
         </>
       )}
@@ -335,19 +388,32 @@ function PhaseRail({ snapshot, current }: { snapshot: Snapshot; current: string 
   const go = (view: string) => navigate(`/m/${snapshot.project.id}/${view}`)
   const batches = snapshot.entrypoints?.batches ?? []
   const numbers = totals(snapshot)
+  const target = stackOf(snapshot.project)
   return (
     <nav className="relative z-10 flex w-72 shrink-0 flex-col gap-6 overflow-y-auto border-r border-white/5 bg-ink-950/40 px-3 py-5">
       <RailSection title={t("rail.discovery")}>
         {PROJECT_STEPS.map((phase) => (
-          <RailItem
-            key={phase}
-            icon={STEP_ICONS[phase]}
-            label={t(`phase.${phase}`)}
-            sub={t(`phase.${phase}.blurb` as Key)}
-            active={current === phase}
-            status={railStatus(snapshot, phase)}
-            onClick={() => go(phase)}
-          />
+          <Fragment key={phase}>
+            <RailItem
+              icon={STEP_ICONS[phase]}
+              label={t(`phase.${phase}`)}
+              sub={t(`phase.${phase}.blurb` as Key)}
+              active={current === phase}
+              status={railStatus(snapshot, phase)}
+              onClick={() => go(phase)}
+            />
+            {phase === "discover" && (
+              <RailItem
+                icon={Crosshair}
+                label={t("phase.target")}
+                sub={target ? `${stackTitle(target)} · ${target.name}` : t("phase.target.blurb")}
+                active={current === "target"}
+                status={target ? "done" : "idle"}
+                attention={Boolean(snapshot.discovery && !target)}
+                onClick={() => go("target")}
+              />
+            )}
+          </Fragment>
         ))}
       </RailSection>
 
@@ -419,7 +485,23 @@ function RailSection({ title, children }: { title: string; children: ReactNode }
   )
 }
 
-function RailItem({ icon: Icon, label, sub, active, status, onClick }: { icon: LucideIcon; label: string; sub: string; active: boolean; status: PhaseStatus; onClick: () => void }) {
+function RailItem({
+  icon: Icon,
+  label,
+  sub,
+  active,
+  status,
+  attention,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  sub: string
+  active: boolean
+  status: PhaseStatus
+  attention?: boolean
+  onClick: () => void
+}) {
   return (
     <button type="button" onClick={onClick} className="relative flex w-full cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2 text-left">
       {active && <motion.span layoutId="rail-active" className="absolute inset-0 rounded-xl bg-white/[0.06] ring-1 ring-white/10" />}
@@ -431,6 +513,12 @@ function RailItem({ icon: Icon, label, sub, active, status, onClick }: { icon: L
         <span className="block truncate text-[11px] text-slate-500">{sub}</span>
       </span>
       {status !== "idle" && <StatusIcon status={status} className="relative size-4" />}
+      {attention && (
+        <span className="relative grid size-4 place-items-center">
+          <span className="absolute size-3 animate-ping-slow rounded-full bg-cyan-300/40" />
+          <span className="size-2 rounded-full bg-cyan-300" />
+        </span>
+      )}
     </button>
   )
 }

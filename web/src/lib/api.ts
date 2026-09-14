@@ -13,12 +13,12 @@ import type {
   ProjectRecord,
   ProjectSnapshot,
 } from "../../../src/shared/types"
+import type { StackChoice } from "../../../src/shared/stacks"
 
 export type Snapshot = ProjectSnapshot & { activity: Activity[] }
-export type Target = { id: string; label: string; cost: 1 | 2 | 3; recommended: boolean }
 export type Editor = { id: string; label: string }
 export type ExportResult = { branch: string; commit: string; repository: string; command: string }
-export type FileWindow = { path: string; from: number; to: number; total: number; lines: string[] }
+export type FileWindow = { path: string; from: number; to: number; total: number; lines: string[]; size?: number; binary?: boolean }
 export type PlaygroundResult = { legacy?: HttpResult; v2?: HttpResult; comparison?: Comparison }
 
 async function request<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -36,17 +36,16 @@ async function request<T>(path: string, init?: RequestInit & { json?: unknown })
 
 export const api = {
   engine: () => request<EngineInfo>("/api/engine"),
-  targets: () => request<Target[]>("/api/targets"),
   fs: (path?: string) => request<FsListing>(`/api/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   preflight: (path: string) => request<Preflight>(`/api/preflight?path=${encodeURIComponent(path)}`),
   sample: () => request<{ path: string }>("/api/sample", { method: "POST" }),
   projects: () => request<ProjectRecord[]>("/api/projects"),
   migrations: () => request<MigrationListItem[]>("/api/migrations"),
-  create: (source: string, model: ModelRef | undefined, target: string, language: Locale) =>
-    request<ProjectRecord>("/api/projects", { method: "POST", json: { source, model, target, language } }),
+  create: (source: string, model: ModelRef | undefined, language: Locale) =>
+    request<ProjectRecord>("/api/projects", { method: "POST", json: { source, model, language } }),
   project: (id: string) => request<Snapshot>(`/api/projects/${id}`),
   history: (id: string) => request<Activity[]>(`/api/projects/${id}/history`),
-  update: (id: string, patch: { model?: ModelRef; target?: string; language?: Locale }) =>
+  update: (id: string, patch: { model?: ModelRef; stack?: StackChoice; language?: Locale }) =>
     request<ProjectRecord>(`/api/projects/${id}`, { method: "PATCH", json: patch }),
   run: (id: string, phase: PhaseName, batch?: string) =>
     request<{ started: boolean; reason?: string }>(`/api/projects/${id}/run`, { method: "POST", json: { phase, batch } }),
@@ -60,7 +59,9 @@ export const api = {
     request<FileWindow>(
       `/api/projects/${id}/file?path=${encodeURIComponent(path)}${start ? `&start=${start}` : ""}${end ? `&end=${end}` : ""}`,
     ),
-  tree: (id: string, dir: string) => request<{ files: string[] }>(`/api/projects/${id}/tree?dir=${encodeURIComponent(dir)}`),
+  fullFile: (id: string, path: string) => request<FileWindow>(`/api/projects/${id}/file?path=${encodeURIComponent(path)}&full=1`),
+  tree: (id: string, dir: string) =>
+    request<{ files: string[]; truncated: boolean }>(`/api/projects/${id}/tree?dir=${encodeURIComponent(dir)}`),
   editors: () => request<Editor[]>("/api/editors"),
   open: (id: string, editor?: string) =>
     request<{ opened: boolean; path: string }>(`/api/projects/${id}/open`, { method: "POST", json: { editor } }),

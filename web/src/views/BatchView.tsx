@@ -10,7 +10,6 @@ import {
   Container,
   FileCode2,
   FlaskConical,
-  FolderTree,
   GitCompareArrows,
   Info,
   Layers,
@@ -28,7 +27,9 @@ import { AnimatePresence, motion } from "motion/react"
 import { Fragment, useEffect, useRef, useState } from "react"
 import type { Localized, Rule, TestCase } from "../../../src/shared/contracts"
 import type { Activity, BatchPhase, BuildStep, HttpResult, LegacyCaseRun, ParityCase } from "../../../src/shared/types"
+import { CodeExplorer } from "../components/CodeExplorer"
 import { CodeView, CommandBlock, JsonView } from "../components/Code"
+import { Select } from "../components/Select"
 import { Badge, Button, EmptyState, MethodBadge, Panel, ProgressRing, Spinner, Stat, Tabs } from "../components/ui"
 import { api, type PlaygroundResult, type Snapshot } from "../lib/api"
 import { curlFor } from "../lib/curl"
@@ -40,6 +41,7 @@ import { useReplayView } from "../lib/project"
 import { navigate } from "../lib/router"
 import { batchIcon, RULE_KINDS } from "../lib/tech"
 import { Callout, Label, PhaseAction, Working } from "./common"
+import { FixList } from "./FixList"
 
 type TabId = "rules" | "tests" | "port" | "parity" | "playground"
 
@@ -543,23 +545,8 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
         </div>
       )}
 
-      {verify && verify.fixes.length > 0 && (
-        <Panel className="p-5">
-          <Label>{t("verify.title")}</Label>
-          {verify.fixes.map((fix, i) => (
-            <div key={`${fix.case}-${i}`} className="flex gap-3 border-b border-white/[0.04] py-2.5 last:border-0">
-              <ShieldCheck className={cn("mt-0.5 size-4 shrink-0", fix.action === "removed" ? "text-rose-300" : "text-violet-300")} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-white">
-                  <span className="font-mono text-xs text-slate-400">{fix.case}</span>
-                  <Badge tone={fix.action === "removed" ? "rose" : "slate"}>{t(`verify.action.${fix.action}` as Key)}</Badge>
-                  <span>{l(fix.cause)}</span>
-                </div>
-                <div className="text-sm text-slate-400">{l(fix.change)}</div>
-              </div>
-            </div>
-          ))}
-        </Panel>
+      {verify && (verify.fixes.length > 0 || verify.notes.length > 0) && (
+        <FixList kind="verify" fixes={verify.fixes} notes={verify.notes} tests={tests} projectId={snapshot.project.id} />
       )}
 
       <div className="flex flex-col gap-2">
@@ -656,15 +643,13 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
   const build = snapshot.builds[batchId]
   const id = snapshot.project.id
   const running = phaseStatus(snapshot, "port", batchId) === "running"
-  const [files, setFiles] = useState<string[]>([])
-  const [selected, setSelected] = useState<string>()
+  const [focus, setFocus] = useState<string>()
+  const explorer = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    api
-      .tree(id, "v2")
-      .then((r) => setFiles(r.files))
-      .catch(() => {})
-  }, [id, port, build?.at, running])
+  const show = (file: string) => {
+    setFocus(file)
+    explorer.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
 
   if (!port) {
     return running ? (
@@ -677,79 +662,66 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-      <div className="flex flex-col gap-4">
-        <Panel className="p-4">
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <Panel className="h-fit p-4">
           <Label>{t("port.build")}</Label>
           {build ? build.steps.map((step) => <BuildStepRow key={step.name} step={step} />) : <div className="text-sm text-slate-500">{t("port.notBuilt")}</div>}
         </Panel>
-        <Panel className="p-2">
-          <div className="px-2 pt-2">
-            <Label>{t("port.files")}</Label>
-          </div>
-          <FileTree files={files} selected={selected} onSelect={setSelected} />
-        </Panel>
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel className="p-5">
+            <Label>{t("port.routes")}</Label>
+            {port.routes.length === 0 && <div className="text-sm text-slate-500">{t("port.noRoutes")}</div>}
+            {port.routes.map((route) => (
+              <div key={`${route.method}-${route.path}`} className="flex items-center gap-2 border-b border-white/[0.04] py-2 last:border-0">
+                <MethodBadge method={route.method} />
+                <span className="font-mono text-sm text-white">{route.path}</span>
+                <span className="ml-auto truncate font-mono text-xs text-cyan-300/80">{route.handler}</span>
+              </div>
+            ))}
+          </Panel>
+          <Panel className="p-5">
+            <Label>{t("port.mapping")}</Label>
+            {port.mapping.length === 0 && <div className="text-sm text-slate-500">{t("port.noMapping")}</div>}
+            {port.mapping.map((m) => (
+              <button
+                type="button"
+                key={`${m.rule}-${m.function}`}
+                onClick={() => m.file && show(m.file)}
+                className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.03]"
+              >
+                <span className="font-mono text-xs text-amber-200">{m.rule}</span>
+                <ArrowRight className="size-3.5 shrink-0 text-slate-600" />
+                <span className="font-mono text-xs text-cyan-200">{m.function}</span>
+                <span className="ml-auto truncate font-mono text-[10px] text-slate-500">{m.file}</span>
+              </button>
+            ))}
+          </Panel>
+          {port.notes.length > 0 && (
+            <Panel className="p-5">
+              <Label>{t("port.notes")}</Label>
+              <ul className="flex flex-col gap-1.5">
+                {port.notes.map((note) => (
+                  <li key={note.en} className="flex gap-2 text-sm text-slate-300">
+                    <Info className="mt-0.5 size-4 shrink-0 text-slate-500" />
+                    {l(note)}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+        </div>
       </div>
-      <div className="flex min-w-0 flex-col gap-4">
-        {selected ? (
-          <>
-            <Button size="xs" variant="ghost" className="w-fit" icon={<ArrowLeft className="size-3.5" />} onClick={() => setSelected(undefined)}>
-              {t("port.overview")}
-            </Button>
-            <CodeView projectId={id} path={selected} tone="cyan" />
-          </>
-        ) : (
-          <>
-            <Panel className="p-5">
-              <Label>{t("port.routes")}</Label>
-              {port.routes.length === 0 && <div className="text-sm text-slate-500">{t("port.noRoutes")}</div>}
-              {port.routes.map((route) => (
-                <div key={`${route.method}-${route.path}`} className="flex items-center gap-2 border-b border-white/[0.04] py-2 last:border-0">
-                  <MethodBadge method={route.method} />
-                  <span className="font-mono text-sm text-white">{route.path}</span>
-                  <span className="ml-auto truncate font-mono text-xs text-cyan-300/80">{route.handler}</span>
-                </div>
-              ))}
-            </Panel>
-            <Panel className="p-5">
-              <Label>{t("port.mapping")}</Label>
-              {port.mapping.length === 0 && <div className="text-sm text-slate-500">{t("port.noMapping")}</div>}
-              {port.mapping.map((m) => (
-                <button
-                  type="button"
-                  key={`${m.rule}-${m.function}`}
-                  onClick={() => m.file && setSelected(m.file)}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.03]"
-                >
-                  <span className="font-mono text-xs text-amber-200">{m.rule}</span>
-                  <ArrowRight className="size-3.5 shrink-0 text-slate-600" />
-                  <span className="font-mono text-xs text-cyan-200">{m.function}</span>
-                  <span className="ml-auto truncate font-mono text-[10px] text-slate-500">{m.file}</span>
-                </button>
-              ))}
-            </Panel>
-            {port.notes.length > 0 && (
-              <Panel className="p-5">
-                <Label>{t("port.notes")}</Label>
-                <ul className="flex flex-col gap-1.5">
-                  {port.notes.map((note) => (
-                    <li key={note.en} className="flex gap-2 text-sm text-slate-300">
-                      <Info className="mt-0.5 size-4 shrink-0 text-slate-500" />
-                      {l(note)}
-                    </li>
-                  ))}
-                </ul>
-              </Panel>
-            )}
-          </>
-        )}
+      <div ref={explorer} className="scroll-mt-4">
+        <Label>{t("port.files")}</Label>
+        <CodeExplorer projectId={id} activity={activity} roots={["v2", "legacy"]} focusPath={focus} className="h-[640px]" />
       </div>
     </div>
   )
 }
 
 function BuildStepRow({ step }: { step: BuildStep }) {
-  const { t, l } = useI18n()
+  const { t } = useI18n()
   const [open, setOpen] = useState(!step.ok && !step.skipped)
   return (
     <div className="border-b border-white/[0.04] py-1.5 last:border-0">
@@ -760,45 +732,6 @@ function BuildStepRow({ step }: { step: BuildStep }) {
         {step.output && <ChevronDown className={cn("size-3.5 text-slate-500 transition", open && "rotate-180")} />}
       </button>
       {open && step.output && <pre className="mt-1.5 max-h-60 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10.5px] whitespace-pre-wrap text-slate-400">{step.output}</pre>}
-    </div>
-  )
-}
-
-function FileTree({ files, selected, onSelect }: { files: string[]; selected?: string; onSelect: (file: string) => void }) {
-  const { t, l } = useI18n()
-  if (files.length === 0) return <div className="px-3 pb-3 text-sm text-slate-500">{t("port.noFiles")}</div>
-  const groups = new Map<string, string[]>()
-  for (const file of files) {
-    const rel = file.replace(/^v2\//, "")
-    const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "."
-    groups.set(dir, [...(groups.get(dir) ?? []), file])
-  }
-  return (
-    <div className="max-h-[520px] overflow-y-auto px-1 pb-2">
-      {[...groups.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([dir, items]) => (
-          <div key={dir} className="mb-1.5">
-            <div className="flex items-center gap-1.5 px-2 py-1 font-mono text-[10.5px] text-slate-500">
-              <FolderTree className="size-3" />
-              {dir === "." ? "v2" : dir}
-            </div>
-            {items.map((file) => (
-              <button
-                type="button"
-                key={file}
-                onClick={() => onSelect(file)}
-                className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-lg py-1 pr-2 pl-5 text-left font-mono text-[12px]",
-                  selected === file ? "bg-cyan-400/10 text-cyan-100" : "text-slate-300 hover:bg-white/[0.04]",
-                )}
-              >
-                <FileCode2 className="size-3.5 shrink-0 text-cyan-300/70" />
-                <span className="truncate">{file.split("/").pop()}</span>
-              </button>
-            ))}
-          </div>
-        ))}
     </div>
   )
 }
@@ -870,21 +803,8 @@ function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchI
         </div>
       )}
 
-      {reconcile && reconcile.fixes.length > 0 && (
-        <Panel className="p-5">
-          <Label>{t("parity.lastReconcile")}</Label>
-          {reconcile.fixes.map((fix, i) => (
-            <div key={`${fix.case}-${i}`} className="flex gap-3 border-b border-white/[0.04] py-2.5 last:border-0">
-              <Wrench className="mt-0.5 size-4 shrink-0 text-violet-300" />
-              <div className="min-w-0">
-                <div className="text-sm text-white">
-                  <span className="font-mono text-xs text-slate-400">{fix.case}</span> · {l(fix.cause)}
-                </div>
-                <div className="text-sm text-slate-400">{l(fix.change)}</div>
-              </div>
-            </div>
-          ))}
-        </Panel>
+      {reconcile && (reconcile.fixes.length > 0 || reconcile.notes.length > 0) && (
+        <FixList kind="reconcile" fixes={reconcile.fixes} notes={reconcile.notes} tests={tests} projectId={snapshot.project.id} />
       )}
 
       <div className="flex flex-col gap-2">
@@ -1014,8 +934,10 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
   const [result, setResult] = useState<PlaygroundResult>()
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string>()
+  const [loaded, setLoaded] = useState<string>()
 
   const load = (caseId: string) => {
+    setLoaded(caseId)
     const c = tests?.cases.find((x) => x.id === caseId)
     if (!c) return
     const query = new URLSearchParams(c.request.query).toString()
@@ -1063,11 +985,13 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
       )}
       <Panel className="p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <select value={method} onChange={(e) => setMethod(e.target.value)} className={cn(inputClass, "h-10 px-3 font-mono text-sm text-white")}>
-            {["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
+          <Select
+            value={method}
+            onChange={setMethod}
+            className="w-28"
+            buttonClassName="h-10 font-mono"
+            options={["GET", "POST", "PUT", "PATCH", "DELETE"].map((m) => ({ value: m, label: m }))}
+          />
           <input
             value={path}
             onChange={(e) => setPath(e.target.value)}
@@ -1082,16 +1006,19 @@ function PlaygroundTab({ snapshot, batchId }: { snapshot: Snapshot; batchId: str
         {tests && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-500">{t("play.fromTest")}</span>
-            <select onChange={(e) => load(e.target.value)} defaultValue="" className={cn(inputClass, "h-8 max-w-full px-2 text-xs text-slate-200")}>
-              <option value="" disabled>
-                {t("play.choose")}
-              </option>
-              {tests.cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {l(c.title)}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={loaded}
+              onChange={load}
+              placeholder={t("play.choose")}
+              className="max-w-full min-w-72"
+              buttonClassName="h-8 text-xs"
+              options={tests.cases.map((c) => ({
+                value: c.id,
+                label: l(c.title),
+                hint: `${c.request.method} ${c.request.path}`,
+                icon: <MethodBadge method={c.request.method} className="w-auto px-1.5" />,
+              }))}
+            />
           </div>
         )}
         <div className="mt-3 grid gap-3 md:grid-cols-2">

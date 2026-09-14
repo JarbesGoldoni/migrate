@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { Layers, ShoppingCart } from "lucide-react"
-import { parseEntryPoints, parseTests } from "../src/shared/contracts"
+import { parseDiscovery, parseEntryPoints, parseTests } from "../src/shared/contracts"
 import type { ProjectState } from "../src/shared/types"
 import type { Snapshot } from "../web/src/lib/api"
 import { curlFor } from "../web/src/lib/curl"
+import { sortVariants } from "../web/src/lib/effort"
+import { ancestors, buildTree, fileName, filterFiles, formatBytes, languageOf } from "../web/src/lib/files"
+import { classify, richTokens } from "../web/src/lib/rich"
+import { choiceFor, sameChoice, targetOptions } from "../web/src/lib/target"
 import { clockTime, cn, duration, methodStyle, shortPath, statusTone } from "../web/src/lib/format"
 import { jsonLines, pretty, touches } from "../web/src/lib/json"
 import { batchProgress, canReplay, hasOutput, isRunning, nextBatchPhase, phaseState, phaseStatus, totals } from "../web/src/lib/pipeline"
@@ -135,5 +139,77 @@ describe("tech icons", () => {
     expect(batchIcon("cart-items")).toBe(ShoppingCart)
     expect(batchIcon("mystery")).toBe(Layers)
     expect(batchIcon()).toBe(Layers)
+  })
+})
+
+describe("code explorer helpers", () => {
+  test("nest files under folders, folders first", () => {
+    const tree = buildTree(["v2/go.mod", "v2/cmd/server/main.go", "v2/internal/a.go", "v2/Dockerfile"], "v2")
+    expect(tree.map((n) => n.name)).toEqual(["cmd", "internal", "Dockerfile", "go.mod"])
+    expect(tree[0].children?.[0]).toMatchObject({ name: "server", path: "v2/cmd/server" })
+    expect(tree[0].children?.[0].children?.[0]).toEqual({ name: "main.go", path: "v2/cmd/server/main.go" })
+    expect(ancestors("v2/cmd/server/main.go")).toEqual(["v2/cmd", "v2/cmd/server"])
+    expect(ancestors("v2/go.mod")).toEqual([])
+    expect(filterFiles(["a/Main.go", "b/x.py"], " main ")).toEqual(["a/Main.go"])
+    expect(filterFiles(["a"], "")).toEqual(["a"])
+    expect(fileName("a/b/c.ts")).toBe("c.ts")
+    expect([500, 2048, 3 * 1024 * 1024].map(formatBytes)).toEqual(["500 B", "2.0 KB", "3.0 MB"])
+  })
+
+  test("know languages by file name and extension", () => {
+    expect(languageOf("v2/Dockerfile")).toMatchObject({ id: "dockerfile", tech: "docker" })
+    expect(languageOf("migration/env/legacy.Dockerfile").id).toBe("dockerfile")
+    expect(languageOf("v2/go.mod")).toMatchObject({ label: "Go module", tech: "go" })
+    expect(languageOf("lib/app.ex").id).toBe("elixir")
+    expect(languageOf(".env.local").id).toBe("dotenv")
+    expect(languageOf("README")).toEqual({ label: "Plain text" })
+  })
+})
+
+describe("rich explanations", () => {
+  test("markup and literals become typed tokens", () => {
+    expect(richTokens("v2 used **local time**; now `422 too_late` like GET /x and user_id in app/a.go")).toEqual([
+      { kind: "text", text: "v2 used " },
+      { kind: "bold", text: "local time" },
+      { kind: "text", text: "; now " },
+      { kind: "code", text: "422 too_late" },
+      { kind: "text", text: " like " },
+      { kind: "method", text: "GET" },
+      { kind: "text", text: " /x and " },
+      { kind: "identifier", text: "user_id" },
+      { kind: "text", text: " in " },
+      { kind: "path", text: "app/a.go" },
+    ])
+    const lit = richTokens('status 404 and "ok" plus $.items[0] and {{login.$.token}} calls getUser()')
+      .filter((t) => t.kind !== "text")
+      .map((t) => [t.kind, t.text])
+    expect(lit).toEqual([
+      ["status", "404"],
+      ["string", '"ok"'],
+      ["json", "$.items[0]"],
+      ["json", "{{login.$.token}}"],
+      ["identifier", "getUser"],
+    ])
+    expect(["$.id", '"x"', "v2/a.go", "getUser", "POST"].map(classify)).toEqual(["json", "string", "path", "code", "method"])
+    expect(richTokens("")).toEqual([])
+  })
+})
+
+describe("target choice", () => {
+  test("suggestions fall back to general picks, and choices are built from stacks", () => {
+    expect(targetOptions(undefined).map((o) => [o.kind, o.language, o.ai])).toEqual([
+      ["finops", "go", false],
+      ["scale", "elixir", false],
+      ["fit", "typescript", false],
+    ])
+    expect(targetOptions(parseDiscovery({ stack: { languages: ["Java"] } }))[2]).toMatchObject({ kind: "upgrade", language: "java", version: "21" })
+    const suggested = parseDiscovery({ recommendations: [{ kind: "finops", language: "go", stacks: [{ id: "chi" }] }] })
+    expect(targetOptions(suggested)).toEqual([expect.objectContaining({ language: "go", ai: true })])
+    expect(choiceFor("go", "1.22", { id: "chi", name: "chi", components: ["chi"] })).toEqual({ language: "go", version: "1.22", stack: "chi", name: "chi", components: ["chi"] })
+    expect(choiceFor("go", "")).toMatchObject({ stack: "stdlib", version: "1.23" })
+    expect(choiceFor("cobol", "1")).toBeUndefined()
+    expect(sameChoice(undefined, undefined)).toBe(true)
+    expect(sameChoice(choiceFor("go", ""), choiceFor("rust", ""))).toBe(false)
+    expect(sortVariants(["max", "custom", "low", "high", "none"])).toEqual(["none", "low", "high", "max", "custom"])
   })
 })

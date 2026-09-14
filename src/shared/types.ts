@@ -1,4 +1,5 @@
 import type { Message } from "./messages"
+import type { StackChoice } from "./stacks"
 import type {
   Discovery,
   Environment,
@@ -67,9 +68,10 @@ export type Activity = {
   status?: "running" | "done" | "error"
 }
 
-export type ModelRef = { providerID: string; modelID: string }
+/** A model and, when the model offers them, the reasoning effort ("variant") to run it with. */
+export type ModelRef = { providerID: string; modelID: string; variant?: string }
 
-export type ModelOption = ModelRef & { providerName: string; name: string }
+export type ModelOption = { providerID: string; modelID: string; providerName: string; name: string; variants?: string[] }
 
 export type EngineInfo = {
   ready: boolean
@@ -151,7 +153,9 @@ export type ProjectRecord = {
   branch: string
   createdAt: number
   model?: ModelRef
-  target: string
+  /** Language id from the stack catalog; chosen after the architecture is mapped. */
+  target?: string
+  stack?: StackChoice
   language?: Locale
   ports: { legacy: number; v2: number }
 }

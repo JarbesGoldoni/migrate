@@ -152,7 +152,12 @@ export const PHASES: Record<PhaseName, PhaseDefinition> = {
     title: "Port to the new stack",
     session: "batch",
     requires: (s, b) =>
-      needsBatch(b) ?? (s.legacyRuns[b!.id] ? undefined : "Run the tests against legacy before building v2"),
+      needsBatch(b) ??
+      (!s.project.target
+        ? "Choose where to migrate first"
+        : s.legacyRuns[b!.id]
+          ? undefined
+          : "Run the tests against legacy before building v2"),
     output: (b) => artifacts.batch(b!.id, "port"),
     prompt: portPrompt,
     parse: parsePort,

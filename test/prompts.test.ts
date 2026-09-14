@@ -7,13 +7,14 @@ import {
   portPrompt,
   type PromptContext,
   reconcilePrompt,
+  BUILDS,
   rulesPrompt,
-  TARGETS,
   targetOf,
   testsPrompt,
   verifyPrompt,
 } from "../src/server/prompts"
 import { parseDiscovery, parseEntryPoints } from "../src/shared/contracts"
+import { LANGUAGES } from "../src/shared/stacks"
 import type { ProjectRecord } from "../src/shared/types"
 
 const project: ProjectRecord = {
@@ -66,16 +67,29 @@ describe("prompts", () => {
     expect(rulesPrompt(ctx)).toContain('"pt-BR": "Agendamentos exigem 24h de antecedência"')
   })
 
-  test("targets describe how to build each stack, with Go as the lowest-cost recommendation", () => {
-    const recommended = Object.entries(TARGETS).filter(([, target]) => target.recommended)
-    expect(recommended.map(([id]) => id)).toEqual(["go"])
-    expect(TARGETS.go.cost).toBe(1)
-    for (const target of Object.values(TARGETS)) {
-      expect(target.architecture).toContain("Dockerfile")
-      expect(target.verify.length).toBeGreaterThan(0)
-      expect([1, 2, 3]).toContain(target.cost)
+  test("every catalog language has a build, and the chosen stack shapes the port prompt", () => {
+    for (const language of LANGUAGES) {
+      const build = BUILDS[language.id]
+      expect(build.architecture).toContain("Dockerfile")
+      expect(typeof build.verify === "function" || build.verify.length > 0).toBe(true)
     }
-    expect(portPrompt({ ...ctx, project: { ...project, target: "rust" } })).toContain("axum")
+    expect(portPrompt({ ...ctx, project: { ...project, target: "rust" } })).toContain("Axum")
+    const phoenix = { language: "elixir", version: "1.18", stack: "phoenix", name: "Phoenix", components: ["phoenix", "ecto"] }
+    const elixir = portPrompt({ ...ctx, project: { ...project, target: "elixir", stack: phoenix } })
+    expect(elixir).toContain("Stack: Elixir 1.18 with Phoenix (phoenix, ecto)")
+    expect(elixir).toContain("mix deps.get")
+    const fastify = { language: "typescript", version: "5", stack: "fastify", name: "Node.js + Fastify", components: ["node", "fastify"] }
+    expect(targetOf({ ...project, target: "typescript", stack: fastify }).verify).toBe("npm install && npm test")
+    expect(targetOf({ ...project, target: "typescript" }).verify).toBe("bun install && bun test")
+  })
+
+  test("discovery asks for three target suggestions from the catalog", () => {
+    const prompt = discoverPrompt(ctx)
+    expect(prompt).toContain('kind "finops"')
+    expect(prompt).toContain("Elixir or Erlang")
+    expect(prompt).toContain("- go (Go 1.23, cloud cost lowest): stdlib = net/http + pgx + sqlc")
+    expect(prompt).toContain('"recommendations"')
+    expect(discoverPrompt({ ...ctx, project: { ...project, target: undefined } })).toContain("the new modern implementation")
   })
 
   test("environment prompt carries ports, compose command and dependencies", () => {
@@ -99,7 +113,7 @@ describe("prompts", () => {
     expect(port).toContain("host port 18081")
     expect(port).toContain("go build ./... && go test ./...")
     expect(portPrompt({ ...ctx, project: { ...project, target: "python" } })).toContain("FastAPI")
-    expect(targetOf({ ...project, target: "cobol" }).label).toBe("Go")
+    expect(targetOf({ ...project, target: "cobol" }).label).toBe("Go 1.23")
     expect(composeProject(project)).toBe("migrate-ab12")
   })
 
@@ -126,6 +140,7 @@ describe("prompts", () => {
     expect(prompt).toContain('request: {"method":"GET","path":"/api/products"}')
     expect(prompt).toContain("…")
     expect(prompt).toContain('"migration/batches/catalog/reconcile.json"')
+    expect(prompt).toContain('"headline" is one plain sentence')
   })
 
   test("tests and verify prompts explain captures; verify lists legacy mismatches only", () => {
@@ -153,5 +168,6 @@ describe("prompts", () => {
     expect(prompt).toContain("legacy: error refused")
     expect(prompt).toContain("{{<earlier case id>.$.")
     expect(prompt).toContain('"migration/batches/catalog/verify.json"')
+    expect(prompt).toContain("**double asterisks**")
   })
 })
