@@ -2,8 +2,6 @@
 
 **Watch AI migrate a legacy app to a modern stack — and prove it still behaves the same.**
 
-[![CI](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml/badge.svg)](https://github.com/JarbesGoldoni/migrate/actions/workflows/ci.yml)
-
 Point it at an application. It maps the architecture, suggests where to migrate, finds every entry point, extracts the business rules, writes tests against the real legacy app, ports the code and runs both side by side until every response matches.
 
 ## How it works
@@ -22,10 +20,10 @@ Every step runs once, straight through. The work happens on its own branch in a 
 ## Run it
 
 ```sh
-bun install
-bun run build
-node dist/cli.js
+npx simplify-migrate
 ```
+
+Or install it once with `npm install -g simplify-migrate` and run `simplify-migrate`. Node 20 or newer.
 
 The command checks that [opencode](https://opencode.ai) is installed (and offers to install it), shows the AI providers opencode is signed in to and lets you keep them or sign in to another one, then prints a link to the app on `localhost`. Press `o` to open it in your browser, `q` to quit. Add `--open` to open the browser straight away, or `--yes` to skip the questions.
 
@@ -52,6 +50,8 @@ After the architecture map, the agent suggests three options — usually **Go** 
 ## Development
 
 ```sh
+bun install
+bun run build          # dist/cli.js plus the web app in dist/web
 bun run dev            # API on :4800, UI with hot reload on :5180
 bun test --coverage    # fails below 80% line or function coverage per file
 bun run typecheck

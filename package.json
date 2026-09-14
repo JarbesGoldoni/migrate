@@ -11,14 +11,6 @@
     "parity",
     "go"
   ],
-  "homepage": "https://github.com/JarbesGoldoni/migrate#readme",
-  "bugs": {
-    "url": "https://github.com/JarbesGoldoni/migrate/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JarbesGoldoni/migrate.git"
-  },
   "license": "UNLICENSED",
   "author": "Jarbes Goldoni",
   "type": "module",
@@ -37,11 +29,12 @@
     "dev": "bun run scripts/dev.ts",
     "build": "bun run build:web && bun run build:cli",
     "build:web": "vite build",
-    "build:cli": "bun build src/cli.ts --target=node --outfile=dist/cli.js --banner='#!/usr/bin/env node'",
+    "build:cli": "bun build src/cli.ts --target=node --minify --outfile=dist/cli.js --banner='#!/usr/bin/env node'",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
   },
   "dependencies": {},
   "devDependencies": {
