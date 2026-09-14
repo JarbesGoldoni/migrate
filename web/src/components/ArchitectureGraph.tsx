@@ -29,41 +29,44 @@ function ArchNodeCard({ data }: NodeProps<ArchNodeType>) {
   const { t } = useI18n()
   const meta = NODE_KINDS[data.node.kind] ?? NODE_KINDS.module
   const Kind = meta.icon
+  // Handles live outside the animated card: React Flow measures them once, and measuring
+  // them mid-entrance (scaled down) would pin the edge ends inside the card.
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.7, y: 16 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ delay: 0.08 * data.index, type: "spring", stiffness: 240, damping: 20 }}
-      whileHover={{ y: -3 }}
-      className="group relative rounded-2xl p-3"
-      style={{
-        width: NODE_W,
-        minHeight: NODE_H,
-        background: "linear-gradient(180deg, rgba(20,26,40,0.95), rgba(10,14,23,0.95))",
-        boxShadow: `0 0 0 1px ${meta.color}33, 0 18px 50px -24px ${meta.color}88`,
-      }}
-    >
+    <div className="relative" style={{ width: NODE_W }}>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
-      <span className="absolute top-3 right-3 flex size-2">
-        <span className="absolute inline-flex size-full animate-ping-slow rounded-full opacity-60" style={{ background: meta.color }} />
-        <span className="relative inline-flex size-2 rounded-full" style={{ background: meta.color }} />
-      </span>
-      <div className="flex items-center gap-2.5">
-        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/50" style={{ boxShadow: `inset 0 0 0 1px ${meta.color}40` }}>
-          <TechIcon tech={data.node.tech} kind={data.node.kind} size={20} />
-        </div>
-        <div className="min-w-0 pr-3">
-          <div className="truncate text-[13px] font-semibold text-white">{data.node.label}</div>
-          <div className="flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase" style={{ color: meta.color }}>
-            <Kind className="size-3" />
-            {t(`kind.${data.node.kind}` as Key)}
-            {data.node.tech && <span className="truncate tracking-normal text-slate-500 normal-case">· {data.node.tech}</span>}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.7, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ delay: 0.08 * data.index, type: "spring", stiffness: 240, damping: 20 }}
+        whileHover={{ y: -3 }}
+        className="group relative rounded-2xl p-3"
+        style={{
+          minHeight: NODE_H,
+          background: "linear-gradient(180deg, rgba(20,26,40,0.95), rgba(10,14,23,0.95))",
+          boxShadow: `0 0 0 1px ${meta.color}33, 0 18px 50px -24px ${meta.color}88`,
+        }}
+      >
+        <span className="absolute top-3 right-3 flex size-2">
+          <span className="absolute inline-flex size-full animate-ping-slow rounded-full opacity-60" style={{ background: meta.color }} />
+          <span className="relative inline-flex size-2 rounded-full" style={{ background: meta.color }} />
+        </span>
+        <div className="flex items-center gap-2.5">
+          <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-black/50" style={{ boxShadow: `inset 0 0 0 1px ${meta.color}40` }}>
+            <TechIcon tech={data.node.tech} kind={data.node.kind} size={20} />
+          </div>
+          <div className="min-w-0 pr-3">
+            <div className="truncate text-[13px] font-semibold text-white">{data.node.label}</div>
+            <div className="flex items-center gap-1 text-[10px] font-medium tracking-wider uppercase" style={{ color: meta.color }}>
+              <Kind className="size-3" />
+              {t(`kind.${data.node.kind}` as Key)}
+              {data.node.tech && <span className="truncate tracking-normal text-slate-500 normal-case">· {data.node.tech}</span>}
+            </div>
           </div>
         </div>
-      </div>
-      {data.node.description && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{data.node.description}</p>}
-    </motion.div>
+        {data.node.description && <p className="mt-2 line-clamp-2 text-[11px] leading-snug text-slate-400">{data.node.description}</p>}
+      </motion.div>
+    </div>
   )
 }
 
