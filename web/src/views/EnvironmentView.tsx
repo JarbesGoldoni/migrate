@@ -1,4 +1,5 @@
 import { Container, Drama, ExternalLink, FileCode2, Play, Square, TriangleAlert } from "lucide-react"
+import { RichText } from "../components/RichText"
 import { motion } from "motion/react"
 import { useState } from "react"
 import type { Activity, RuntimeStatus } from "../../../src/shared/types"
@@ -86,7 +87,7 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-white">{mock.dependency}</div>
-                      <div className="text-xs text-slate-400">{l(mock.approach)}</div>
+                      <div className="text-xs text-slate-400"><RichText text={l(mock.approach)} /></div>
                       <div className="mt-1 flex flex-wrap gap-1">
                         {mock.files.map((file) => (
                           <span key={file} className="flex items-center gap-1 rounded bg-white/[0.04] px-1.5 font-mono text-[10px] text-slate-500">
@@ -107,7 +108,7 @@ export function EnvironmentView({ snapshot, activity }: { snapshot: Snapshot; ac
                 {environment.limitations.map((item) => (
                   <div key={item.en} className="flex gap-2 text-sm text-slate-300">
                     <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />
-                    {l(item)}
+                    <RichText text={l(item)} />
                   </div>
                 ))}
               </Panel>

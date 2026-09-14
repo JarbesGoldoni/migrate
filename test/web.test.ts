@@ -7,6 +7,7 @@ import { curlFor } from "../web/src/lib/curl"
 import { sortVariants } from "../web/src/lib/effort"
 import { ancestors, buildTree, fileName, filterFiles, formatBytes, languageOf } from "../web/src/lib/files"
 import { classify, richTokens } from "../web/src/lib/rich"
+import { serverText } from "../web/src/lib/server-text"
 import { choiceFor, sameChoice, targetOptions } from "../web/src/lib/target"
 import { clockTime, cn, duration, methodStyle, shortPath, statusTone } from "../web/src/lib/format"
 import { jsonLines, pretty, touches } from "../web/src/lib/json"
@@ -167,31 +168,41 @@ describe("code explorer helpers", () => {
 })
 
 describe("rich explanations", () => {
-  test("markup and literals become typed tokens", () => {
+  test("markup and a few literals become typed tokens; apostrophes and bare words stay prose", () => {
     expect(richTokens("v2 used **local time**; now `422 too_late` like GET /x and user_id in app/a.go")).toEqual([
       { kind: "text", text: "v2 used " },
       { kind: "bold", text: "local time" },
       { kind: "text", text: "; now " },
       { kind: "code", text: "422 too_late" },
       { kind: "text", text: " like " },
-      { kind: "method", text: "GET" },
-      { kind: "text", text: " /x and " },
-      { kind: "identifier", text: "user_id" },
-      { kind: "text", text: " in " },
+      { kind: "method", text: "GET /x" },
+      { kind: "text", text: " and user_id in " },
       { kind: "path", text: "app/a.go" },
     ])
-    const lit = richTokens('status 404 and "ok" plus $.items[0] and {{login.$.token}} calls getUser()')
+    const lit = richTokens(`Go's mux serves 'GET <path>' with status 404, "ok", $.items[0], {{login.$.token}} and write_success(200, {"a": 1})`)
       .filter((t) => t.kind !== "text")
       .map((t) => [t.kind, t.text])
     expect(lit).toEqual([
+      ["string", "'GET <path>'"],
       ["status", "404"],
       ["string", '"ok"'],
       ["json", "$.items[0]"],
       ["json", "{{login.$.token}}"],
-      ["identifier", "getUser"],
+      ["call", 'write_success(200, {"a": 1})'],
     ])
-    expect(["$.id", '"x"', "v2/a.go", "getUser", "POST"].map(classify)).toEqual(["json", "string", "path", "code", "method"])
+    expect(["$.id", '"x"', "v2/a.go", "getUser", "POST /x", "run()"].map(classify)).toEqual(["json", "string", "path", "code", "method", "call"])
     expect(richTokens("")).toEqual([])
+  })
+})
+
+describe("server text", () => {
+  test("known reasons and errors follow the viewer's language; anything else stays as sent", () => {
+    const t = (key: string, params?: Record<string, unknown>) => (params ? `${key}(${params.detail})` : key)
+    expect(serverText("Run the tests against legacy before building v2", t as never)).toBe("server.legacyFirst")
+    expect(serverText("The agent stopped: Stopped", t as never)).toBe("server.agentStopped(server.stopped)")
+    expect(serverText("Unknown migration ab12", t as never)).toBe("server.unknownMigration(ab12)")
+    expect(serverText("Something unexpected", t as never)).toBe("Something unexpected")
+    expect(serverText(undefined, t as never)).toBe("")
   })
 })
 

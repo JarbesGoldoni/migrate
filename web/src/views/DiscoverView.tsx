@@ -6,6 +6,7 @@ import type { Activity } from "../../../src/shared/types"
 import { ArchitectureGraph } from "../components/ArchitectureGraph"
 import { TechIcon } from "../components/brand"
 import { CommandBlock } from "../components/Code"
+import { RichText } from "../components/RichText"
 import { Badge, Button, EmptyState, Panel } from "../components/ui"
 import { api, type Snapshot } from "../lib/api"
 import { useI18n } from "../lib/i18n"
@@ -58,7 +59,7 @@ export function DiscoverView({ snapshot, activity }: { snapshot: Snapshot; activ
       {discovery && (
         <>
           <Panel className="p-5">
-            <p className="text-[15px] leading-relaxed text-slate-200">{l(discovery.summary)}</p>
+            <p className="text-[15px] leading-relaxed text-slate-200"><RichText text={l(discovery.summary)} /></p>
             {stack.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {stack.map((tech, i) => (
@@ -204,7 +205,7 @@ function DependencyCard({ dependency, index }: { dependency: Dependency; index: 
           {t(`strategy.${dependency.strategy}` as Key)}
         </Badge>
       </div>
-      {l(dependency.notes) && <p className="mt-3 text-xs leading-relaxed text-slate-400">{l(dependency.notes)}</p>}
+      {l(dependency.notes) && <p className="mt-3 text-xs leading-relaxed text-slate-400"><RichText text={l(dependency.notes)} /></p>}
       {dependency.env.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1">
           {dependency.env.map((env) => (

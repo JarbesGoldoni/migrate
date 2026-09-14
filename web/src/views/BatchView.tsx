@@ -38,6 +38,8 @@ import { useI18n } from "../lib/i18n"
 import type { Key } from "../lib/i18n-core"
 import { BATCH_STEPS, batchProgress, hasOutput, nextBatchPhase, phaseStatus } from "../lib/pipeline"
 import { useReplayView } from "../lib/project"
+import { serverText } from "../lib/server-text"
+import { RichText } from "../components/RichText"
 import { navigate } from "../lib/router"
 import { batchIcon, RULE_KINDS } from "../lib/tech"
 import { Callout, Label, PhaseAction, Working } from "./common"
@@ -316,7 +318,7 @@ function NextBar({ snapshot, batchId, next, runningStep }: { snapshot: Snapshot;
       <div className="flex-1">
         <div className="text-sm font-medium text-white">{t("next.label", { step: t(stepLabel(next)) })}</div>
         <div className="text-xs text-slate-400">{t(stepBlurb(next))}</div>
-        {reason && <div className="text-xs text-amber-300">{reason}</div>}
+        {reason && <div className="text-xs text-amber-300">{serverText(reason, t)}</div>}
       </div>
       <Button
         variant="primary"
@@ -370,7 +372,7 @@ function RulesTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
                 <span className="font-mono text-sm text-white">{entry?.path || (entry && l(entry.name)) || ep.entrypoint}</span>
                 <Badge>{t("rules.count", { count: ep.rules.length })}</Badge>
               </div>
-              {entry && l(entry.summary) && <p className="mt-1.5 text-sm text-slate-400">{l(entry.summary)}</p>}
+              {entry && l(entry.summary) && <p className="mt-1.5 text-sm text-slate-400"><RichText text={l(entry.summary)} /></p>}
               {ep.flow.length > 0 && <Flow flow={ep.flow} projectId={id} />}
               <div className="mt-5 grid gap-3 xl:grid-cols-2">
                 {ep.rules.map((rule, j) => (
@@ -405,7 +407,7 @@ function Flow({ flow, projectId }: { flow: Array<{ file: string; line: number; d
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-sm text-slate-300">{l(step.description)}</div>
+              <div className="text-sm text-slate-300"><RichText text={l(step.description)} /></div>
               {step.file && (
                 <button
                   type="button"
@@ -444,7 +446,7 @@ function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; proje
             <span className="font-medium text-white">{l(rule.title)}</span>
             <span className="font-mono text-[10px] text-slate-500">{rule.id}</span>
           </div>
-          {l(rule.description) && <p className="mt-1 text-sm leading-relaxed text-slate-400">{l(rule.description)}</p>}
+          {l(rule.description) && <p className="mt-1 text-sm leading-relaxed text-slate-400"><RichText text={l(rule.description)} /></p>}
         </div>
       </div>
       {rule.decisions.length > 0 && (
@@ -456,7 +458,7 @@ function RuleCard({ rule, index, projectId }: { rule: Rule; index: number; proje
           </div>
           {rule.decisions.map((decision) => (
             <div key={decision.id} className="grid grid-cols-[1fr_16px_1fr] items-start gap-2 border-t border-white/[0.04] px-3 py-2 text-[12.5px]">
-              <span className="text-slate-300">{l(decision.when)}</span>
+              <span className="text-slate-300"><RichText text={l(decision.when)} /></span>
               <ArrowRight className="mt-0.5 size-3.5 text-slate-600" />
               <span className="font-mono text-[12px] break-words text-cyan-100">{l(decision.then)}</span>
             </div>
@@ -514,7 +516,7 @@ function TestsTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId
 
       {run?.error && (
         <Callout tone="rose" icon={TriangleAlert} title={t("tests.noAnswerTitle")}>
-          {t("tests.noAnswerText", { error: run.error })}
+          {t("tests.noAnswerText", { error: serverText(run.error, t) })}
         </Callout>
       )}
 
@@ -704,7 +706,7 @@ function PortTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchId:
                 {port.notes.map((note) => (
                   <li key={note.en} className="flex gap-2 text-sm text-slate-300">
                     <Info className="mt-0.5 size-4 shrink-0 text-slate-500" />
-                    {l(note)}
+                    <RichText text={l(note)} />
                   </li>
                 ))}
               </ul>
@@ -727,11 +729,11 @@ function BuildStepRow({ step }: { step: BuildStep }) {
     <div className="border-b border-white/[0.04] py-1.5 last:border-0">
       <button type="button" onClick={() => step.output && setOpen((o) => !o)} className="flex w-full cursor-pointer items-center gap-2 text-left text-sm">
         {step.skipped ? <CircleDashed className="size-4 text-slate-500" /> : step.ok ? <CircleCheck className="size-4 text-emerald-400" /> : <CircleX className="size-4 text-rose-400" />}
-        <span className="flex-1 text-slate-200">{step.name}</span>
+        <span className="flex-1 text-slate-200">{serverText(step.name, t)}</span>
         {step.skipped && <span className="text-[10px] text-slate-500">{t("common.skipped")}</span>}
         {step.output && <ChevronDown className={cn("size-3.5 text-slate-500 transition", open && "rotate-180")} />}
       </button>
-      {open && step.output && <pre className="mt-1.5 max-h-60 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10.5px] whitespace-pre-wrap text-slate-400">{step.output}</pre>}
+      {open && step.output && <pre className="mt-1.5 max-h-60 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10.5px] whitespace-pre-wrap text-slate-400">{serverText(step.output, t)}</pre>}
     </div>
   )
 }
@@ -792,7 +794,7 @@ function ParityTab({ snapshot, batchId, activity }: { snapshot: Snapshot; batchI
 
       {parity.error && (
         <Callout tone="rose" icon={TriangleAlert} title={t("parity.notAnswered")}>
-          {parity.error}
+          {serverText(parity.error, t)}
         </Callout>
       )}
 

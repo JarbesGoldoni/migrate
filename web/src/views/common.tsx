@@ -8,6 +8,7 @@ import { cn, duration } from "../lib/format"
 import { useI18n } from "../lib/i18n"
 import { hasOutput, phaseState } from "../lib/pipeline"
 import { useReplayView } from "../lib/project"
+import { serverText } from "../lib/server-text"
 
 export function useNow(active: boolean, interval = 1000) {
   const [now, setNow] = useState(() => Date.now())
@@ -74,7 +75,7 @@ export function PhaseAction({
       <AnimatePresence>
         {reason && (
           <motion.span initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="max-w-64 text-right text-xs text-amber-300">
-            {reason}
+            {serverText(reason, t)}
           </motion.span>
         )}
       </AnimatePresence>
@@ -127,7 +128,7 @@ export function PhaseHeader({
             {state.status === "done" && (
               <span className="text-slate-400">{replaying ? took : t("status.completed", { ago: ago(state.finishedAt), duration: took })}</span>
             )}
-            {state.status === "failed" && <span className="text-rose-300">{state.error}</span>}
+            {state.status === "failed" && <span className="text-rose-300">{serverText(state.error, t)}</span>}
             {state.note && state.status !== "running" && (
               <Badge tone={state.status === "failed" ? "rose" : "slate"}>{m(state.noteMessage, state.note)}</Badge>
             )}

@@ -42,6 +42,7 @@ import { batchProgress, canReplay, hasOutput, isRunning, PROJECT_STEPS, phaseSta
 import { ReplayContext, useProject, useProjectStore, useReplayTicker } from "../lib/project"
 import { frameAt, viewFor } from "../lib/replay"
 import { navigate } from "../lib/router"
+import { serverText } from "../lib/server-text"
 import { batchIcon } from "../lib/tech"
 import { BatchView } from "../views/BatchView"
 import { DiscoverView } from "../views/DiscoverView"
@@ -107,7 +108,7 @@ export function ProjectScreen({ id, view }: { id: string; view: string }) {
       <div className="flex h-screen flex-col items-center justify-center gap-4 text-center">
         <Logo />
         <div className="text-lg text-white">{t("project.openError")}</div>
-        <div className="text-sm text-slate-400">{error}</div>
+        <div className="text-sm text-slate-400">{serverText(error, t)}</div>
         <Button onClick={() => navigate("/")}>{t("project.backHome")}</Button>
       </div>
     )

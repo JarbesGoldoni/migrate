@@ -192,7 +192,7 @@ Workspace layout:
 Rules of engagement:
 - Be efficient: locate code with glob and grep, read only what you need, do not narrate.
 - Never ask questions. Make reasonable assumptions and record them.
-- People read the results in English, Brazilian Portuguese or Spanish. Every human-readable text value in the JSON (summaries, names, titles, labels, descriptions, rationales, flow steps, decision rows, purposes, notes, limitations, causes, changes) is an object with the same meaning in all three: {"en": "...", "pt-BR": "...", "es": "..."}. Literal values inside such text (status codes, error codes, field names) stay unchanged in every language. Everything else is a plain string in English: ids, JSON keys, file paths, code, commands, technology names, HTTP methods, paths, headers and request or response bodies.
+- People read the results in English, Brazilian Portuguese or Spanish. Every human-readable text value in the JSON (summaries, names, titles, labels, descriptions, rationales, flow steps, decision rows, purposes, notes, limitations, causes, changes) is an object with the same meaning in all three: {"en": "...", "pt-BR": "...", "es": "..."}. Literal values inside such text (status codes, error codes, field names) stay unchanged in every language. Everything else is a plain string in English: ids, JSON keys, file paths, code, commands, technology names, HTTP methods, paths, headers and request or response bodies. A plain string where such an object belongs is shown untranslated to every reader, so never shortcut it, even for short texts. Write these texts to be easy to read: short sentences, with only code identifiers, fields, literal values, status codes and file paths wrapped in backticks.
 - Commands that can block (container builds, "compose up", servers, installs) always get a timeout of at most 5 minutes; never start a foreground process that does not exit.
 - Finish by writing the JSON document to "${output}" (relative to the workspace root; absolute path ${root}/${output}) with the write tool. Valid JSON only: no comments, no trailing commas. Then reply with one short sentence.`
 }
@@ -291,6 +291,7 @@ Task: map the legacy application's architecture, its runtime dependencies and ho
 Look at manifests, entry files, configuration, Dockerfiles/compose files, environment variable usage and every client for databases, caches, queues, storage and external HTTP APIs.
 - Keep the graph readable: 4 to 16 nodes. Node kinds: client, gateway, service, module, worker, datastore, cache, queue, external, storage.
 - "tech" is a lowercase technology name (express, spring, django, postgresql, redis, kafka, stripe, s3...).
+- "stack" values are bare technology names ("go", "net/http", "postgresql", "npm") with no explanations; a dependency "name" is its product name (PostgreSQL, Stripe) and anything descriptive goes in "notes".
 - Every dependency the running app needs gets a strategy for isolated local runs: "container" (a real throwaway container such as postgres or redis), "mock" (a stub server we write, typical for third-party HTTP APIs) or "skip" (not needed to serve requests).
 - "run" describes how the legacy app is installed and started, the port it listens on and a cheap path that answers HTTP.
 

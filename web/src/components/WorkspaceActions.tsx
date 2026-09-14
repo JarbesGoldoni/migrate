@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import type { ProjectRecord } from "../../../src/shared/types"
 import { api, type Editor, type ExportResult } from "../lib/api"
 import { useI18n } from "../lib/i18n"
+import { serverText } from "../lib/server-text"
 import { CommandBlock } from "./Code"
 import { Dialog } from "./Dialog"
 import { Button, CopyButton, Spinner } from "./ui"
@@ -163,7 +164,7 @@ function ExportDialog({ project, open, onClose }: { project: ProjectRecord; open
             spellCheck={false}
             className="h-10 rounded-xl bg-black/30 px-3 font-mono text-sm text-white ring-1 ring-white/10 outline-none focus:ring-emerald-400/40"
           />
-          {error && <div className="text-sm text-rose-300">{error}</div>}
+          {error && <div className="text-sm text-rose-300">{serverText(error, t)}</div>}
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={close}>
               {t("common.cancel")}

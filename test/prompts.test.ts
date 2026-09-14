@@ -62,6 +62,7 @@ describe("prompts", () => {
       expect(prompt).toContain(`"${output}"`)
       expect(prompt).toContain("never modify")
       expect(prompt).toContain('{"en": "...", "pt-BR": "...", "es": "..."}')
+      expect(prompt).toContain("shown untranslated to every reader")
     }
     // Examples show every human-readable value in the three languages.
     expect(rulesPrompt(ctx)).toContain('"pt-BR": "Agendamentos exigem 24h de antecedência"')
